@@ -1,0 +1,16 @@
+{
+  "name": "practimesa",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "db:up": "docker compose up -d postgres",
+    "sonar:up": "docker compose up -d sonarqube",
+    "dev:api": "npm run start:dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "test": "npm test -w apps/api",
+    "sonar": "npx --yes @sonar/scan",
+    "sonar:local": "npx --yes @sonar/scan -Dsonar.host.url=http://localhost:9000"
+  }
+}

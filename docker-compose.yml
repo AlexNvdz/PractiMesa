@@ -1,0 +1,39 @@
+name: practimesa
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: practimesa
+      POSTGRES_PASSWORD: practimesa
+      POSTGRES_DB: practimesa
+    ports:
+      # Host 5433: 5432 is often taken by a local Postgres install.
+      - "5433:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U practimesa -d practimesa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # SonarQube keeps its own embedded DB in the volume; fine for local audits only.
+  sonarqube:
+    image: sonarqube:community
+    restart: unless-stopped
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_extensions:/opt/sonarqube/extensions
+      - sonar_logs:/opt/sonarqube/logs
+
+volumes:
+  pg_data:
+  sonar_data:
+  sonar_extensions:
+  sonar_logs:
