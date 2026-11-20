@@ -9,7 +9,8 @@
     "test": "node --experimental-vm-modules --disable-warning=ExperimentalWarning ../../node_modules/jest/bin/jest.js",
     "test:cov": "node --experimental-vm-modules --disable-warning=ExperimentalWarning ../../node_modules/jest/bin/jest.js --coverage",
     "db:migrate": "prisma migrate deploy",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "factus:check": "node scripts/factus-check.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^12.6.0",
