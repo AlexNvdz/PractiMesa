@@ -16,5 +16,7 @@ describe('password hashing (argon2id)', () => {
   it('rejects malformed or foreign hashes without throwing', async () => {
     await expect(verifyPassword('x', '')).resolves.toBe(false);
     await expect(verifyPassword('x', '$2b$10$bcrypthashlookslikethis')).resolves.toBe(false);
+    await expect(verifyPassword('x', '$argon2id$v=19$m=0,t=2,p=1$c2FsdA$aGFzaA')).resolves.toBe(false);
+    await expect(verifyPassword('x', '$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA$extra')).resolves.toBe(false);
   });
 });

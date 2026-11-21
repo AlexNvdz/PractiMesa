@@ -2,7 +2,6 @@ import { argon2, randomBytes, timingSafeEqual } from 'node:crypto';
 
 // OWASP minimum for argon2id: m=19 MiB, t=2, p=1.
 const DEFAULTS = { memory: 19456, passes: 2, parallelism: 1, tagLength: 32 };
-const PHC = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$([A-Za-z0-9+/]+)\$([A-Za-z0-9+/]+)$/;
 
 type Params = typeof DEFAULTS;
 
@@ -22,15 +21,24 @@ export async function hashPassword(password: string): Promise<string> {
   return `$argon2id$v=19$m=${memory},t=${passes},p=${parallelism}$${b64(salt)}$${b64(hash)}`;
 }
 
+/** Parses `$argon2id$v=19$m=..,t=..,p=..$salt$hash`; null for anything else. */
+function parsePhc(stored: string) {
+  const [empty, alg, version, params, salt, hash, ...rest] = stored.split('$');
+  if (empty !== '' || alg !== 'argon2id' || version !== 'v=19' || !salt || !hash || rest.length) return null;
+  const values = Object.fromEntries((params ?? '').split(',').map((kv) => kv.split('=')));
+  const [memory, passes, parallelism] = [values.m, values.t, values.p].map(Number);
+  if (![memory, passes, parallelism].every((n) => Number.isInteger(n) && n > 0)) return null;
+  return { memory, passes, parallelism, salt: Buffer.from(salt, 'base64'), hash: Buffer.from(hash, 'base64') };
+}
+
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const m = PHC.exec(stored);
-  if (!m) return false;
-  const expected = Buffer.from(m[5], 'base64');
-  const actual = await derive(password, Buffer.from(m[4], 'base64'), {
-    memory: Number(m[1]),
-    passes: Number(m[2]),
-    parallelism: Number(m[3]),
-    tagLength: expected.length,
+  const phc = parsePhc(stored);
+  if (!phc) return false;
+  const actual = await derive(password, phc.salt, {
+    memory: phc.memory,
+    passes: phc.passes,
+    parallelism: phc.parallelism,
+    tagLength: phc.hash.length,
   });
-  return timingSafeEqual(actual, expected);
+  return timingSafeEqual(actual, phc.hash);
 }
