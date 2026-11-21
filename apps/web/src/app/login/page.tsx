@@ -3,7 +3,21 @@
 import { AlertCircle, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
-import { ApiError, useAuth } from "@/lib/auth";
+import { button } from "@/components/ui";
+import { ApiError, type Role, useAuth } from "@/lib/auth";
+
+interface DemoOrganization {
+  slug: string;
+  name: string;
+  plan_tier: "SINGLE" | "MULTI";
+}
+
+const DEMO_ROLES: { role: Role; label: string }[] = [
+  { role: "OWNER", label: "Dueño" },
+  { role: "CASHIER", label: "Cajero" },
+  { role: "WAITER", label: "Mesero" },
+  { role: "KITCHEN", label: "Cocina" },
+];
 
 function messageFor(err: unknown): string {
   if (err instanceof ApiError) {
@@ -21,18 +35,39 @@ const swap =
 const hidden = "opacity-0 scale-25 blur-[4px] motion-reduce:scale-100 motion-reduce:blur-none";
 
 export default function LoginPage() {
-  const { status, login } = useAuth();
+  const { status, me, login, demoLogin } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [demo, setDemo] = useState<DemoOrganization[]>([]);
   const errorId = useId();
+  const demoId = useId();
 
   useEffect(() => {
-    if (status === "authenticated") router.replace("/");
-  }, [status, router]);
+    // Cashiers and waiters work on the table map; everyone else starts at the summary.
+    if (status === "authenticated") router.replace(me?.user.role === "CASHIER" || me?.user.role === "WAITER" ? "/mesas" : "/");
+  }, [status, me, router]);
+
+  // The API answers 404 where demo login is off: then there are no demo buttons.
+  useEffect(() => {
+    fetch("/api/auth/demo")
+      .then((res) => (res.ok ? (res.json() as Promise<DemoOrganization[]>) : []))
+      .then(setDemo, () => undefined);
+  }, []);
+
+  async function enterDemo(slug: string, role: Role) {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await demoLogin(slug, role);
+    } catch (err) {
+      setError(messageFor(err));
+      setSubmitting(false);
+    }
+  }
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -135,7 +170,41 @@ export default function LoginPage() {
           </form>
         </div>
 
-        <p className="enter mt-6 text-center text-sm text-muted text-pretty [--i:2]">
+        {demo.length > 0 && (
+          <section aria-labelledby={demoId} className="enter mt-4 rounded-panel border border-line bg-surface p-5 [--i:2] sm:px-8">
+            <h2 id={demoId} className="text-[15px] font-semibold">
+              Entrar como demo
+            </h2>
+            <p className="mt-0.5 text-sm text-muted text-pretty">
+              {demo.length === 1 ? `${demo[0].name}, con datos de ejemplo.` : "Negocios con datos de ejemplo."} Elige un rol para ver su
+              pantalla.
+            </p>
+            {demo.map((org) => (
+              <div key={org.slug} className="mt-4">
+                {demo.length > 1 && (
+                  <p className="mb-2 text-sm font-medium text-ink-2">
+                    {org.name} · {org.plan_tier === "SINGLE" ? "1 sede" : "varias sedes"}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  {DEMO_ROLES.map(({ role, label }) => (
+                    <button
+                      key={role}
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => void enterDemo(org.slug, role)}
+                      className={button.secondary}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        <p className={`enter mt-6 text-center text-sm text-muted text-pretty ${demo.length ? "[--i:3]" : "[--i:2]"}`}>
           ¿No tienes acceso? Pídele una cuenta al dueño de tu restaurante.
         </p>
       </div>

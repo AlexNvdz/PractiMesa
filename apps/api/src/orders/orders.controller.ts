@@ -16,6 +16,7 @@ import { Roles } from '../common/guards/roles.guard';
 import { requireLocation } from '../common/tenant/tenant-context';
 import { MAX_COP, num, oneOf, parseBody, uuid } from '../common/validation';
 import { Prisma } from '../generated/prisma/client';
+import { InvoicingService } from '../invoicing/invoicing.service';
 import { FactusPayService } from '../payments/factus-pay.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemInput, parseItems, priceItems, totals } from './order-items';
@@ -69,6 +70,7 @@ export class OrdersController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly factusPay: FactusPayService,
+    private readonly invoicing: InvoicingService,
   ) {}
 
   /** Open accounts (not paid, not cancelled), newest first. */
@@ -155,7 +157,7 @@ export class OrdersController {
    */
   @Post(':id/pay')
   @Roles('OWNER', 'ADMIN', 'CASHIER')
-  pay(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
+  async pay(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
     const { payment_method, tip_percent, tip_cop } = parseBody<{ payment_method: string; tip_percent?: number; tip_cop?: number }>(
@@ -170,7 +172,7 @@ export class OrdersController {
         : new Prisma.Decimal(tip_cop ?? 0);
     if (payment_method === 'FACTUS_PAY_QR') return this.requestQr(tenant.organizationId, id, locationId, tipFor);
 
-    return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
+    const paid = await this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       const order = await lockOpenOrder(tx, id, locationId);
       // FOR SHARE: a register close (FOR UPDATE) waits for this sale, or this sale sees the register closed.
       const [register] = await tx.$queryRaw<{ id: string }[]>`
@@ -178,6 +180,9 @@ export class OrdersController {
       if (!register) throw new ConflictException('Abre la caja antes de cobrar');
       return settleOrder(tx, id, locationId, order, { payment_method, tip_cop: tipFor(order), cash_register_id: register.id });
     });
+    // An invoice asked for before paying goes out now, after the commit; the job only retries failures.
+    if (paid.factus_status === 'PENDING') void this.invoicing.emit(id);
+    return paid;
   }
 
   /**

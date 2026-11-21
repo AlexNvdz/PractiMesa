@@ -1,0 +1,106 @@
+/** API shapes used by the POS screens (money and rates arrive as decimal strings). */
+
+export type TableStatus = "FREE" | "OCCUPIED" | "RESERVED";
+
+export interface Floor {
+  id: string;
+  name: string;
+}
+
+export interface DiningTable {
+  id: string;
+  name: string;
+  number: number;
+  capacity: number;
+  status: TableStatus;
+  floor_id: string | null;
+}
+
+export interface ModifierGroup {
+  name: string;
+  required: boolean;
+  multiple: boolean;
+  options: { name: string; price_cop: number }[];
+}
+
+export interface Category {
+  id: string;
+  name: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  category_id: string | null;
+  base_price_cop: string;
+  modifiers_schema: ModifierGroup[];
+  is_active: boolean;
+}
+
+export interface LocationProduct {
+  product_id: string;
+  custom_price_cop: string | null;
+  is_available: boolean;
+}
+
+/** A product as this location sells it. */
+export interface MenuItem {
+  id: string;
+  name: string;
+  category_id: string | null;
+  price: number;
+  available: boolean;
+  modifiers: ModifierGroup[];
+}
+
+export interface OrderItem {
+  id: string;
+  quantity: number;
+  unit_price_cop: string;
+  selected_modifiers: { group: string; option: string; price_cop: number }[];
+  notes: string | null;
+  round: number;
+  products: { name: string };
+}
+
+export interface Order {
+  id: string;
+  order_number: number;
+  table_id: string | null;
+  order_type: "DINE_IN" | "PICKUP";
+  status: string;
+  payment_status: "UNPAID" | "PENDING_QR" | "PAID";
+  payment_method: string | null;
+  subtotal_cop: string;
+  tax_cop: string;
+  total_cop: string;
+  tip_cop: string;
+  factus_qr_payload: string | null;
+  factus_status: "NOT_SENT" | "PENDING" | "VALIDATED" | "ERROR";
+  factus_invoice_number: string | null;
+  factus_pdf_url: string | null;
+  factus_error: string | null;
+  created_at: string;
+  order_items: OrderItem[];
+  dining_tables: { name: string } | null;
+}
+
+export interface StockAlert {
+  ingredient_id: string;
+  name: string;
+  unit: string;
+  current_qty: string;
+}
+
+export interface CashRegister {
+  id: string;
+  status: "OPEN" | "CLOSED";
+  opened_at: string;
+  closed_at: string | null;
+  opening_amount_cop: string;
+  expected_closing_cop: string | null;
+  actual_closing_cop: string | null;
+  users: { full_name: string } | null;
+}
+
+export const isOpen = (o: Order) => o.payment_status !== "PAID" && o.status !== "CANCELLED";

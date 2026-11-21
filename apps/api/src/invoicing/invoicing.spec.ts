@@ -115,15 +115,20 @@ afterAll(async () => {
 });
 
 describe('requesting an invoice', () => {
-  it('waits until the order is paid, then the job emits it to consumidor final', async () => {
+  it('waits until the order is paid, then emits it to consumidor final', async () => {
     const { body: order } = await cashierA('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: product, quantity: 1 }] });
     const res = await invoice(cashierA, order.id);
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ factus_status: 'PENDING', invoice_customer: null });
     expect(fake.bills).toHaveLength(0);
 
-    await cashierA('POST', `/orders/${order.id}/pay`, { payment_method: 'CASH', tip_percent: 10 });
-    await invoicing.processPending();
+    // Paying sends it right away, after the commit, without waiting for the job.
+    const paid = await cashierA('POST', `/orders/${order.id}/pay`, { payment_method: 'CASH', tip_percent: 10 });
+    expect(paid.body.factus_status).toBe('PENDING');
+    for (let tries = 0; (await state(order.id)).factus_status === 'PENDING'; tries++) {
+      if (tries === 50) throw new Error('invoice not emitted after paying');
+      await new Promise((r) => setTimeout(r, 50));
+    }
     await expect(state(order.id)).resolves.toMatchObject({
       factus_status: 'VALIDATED',
       factus_attempts: 1,
