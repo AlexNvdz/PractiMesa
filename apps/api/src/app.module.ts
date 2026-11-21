@@ -14,6 +14,9 @@ import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { HealthController } from './health/health.controller';
 import { LocationsController } from './locations/locations.controller';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
+import { FactusService } from './invoicing/factus.service';
+import { InvoicingController } from './invoicing/invoicing.controller';
+import { InvoicingService } from './invoicing/invoicing.service';
 import { OrdersController } from './orders/orders.controller';
 import { FactusPayWebhookController } from './payments/factus-pay-webhook.controller';
 import { FactusPayService } from './payments/factus-pay.service';
@@ -44,11 +47,14 @@ import { PrismaService } from './prisma/prisma.service';
     OrdersController,
     IntegrationsController,
     FactusPayWebhookController,
+    InvoicingController,
   ],
   providers: [
     PrismaService,
     AuthService,
     FactusPayService,
+    FactusService,
+    InvoicingService,
     LoginThrottlerGuard,
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: PrismaExceptionFilter },

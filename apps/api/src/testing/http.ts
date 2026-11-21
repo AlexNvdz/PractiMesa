@@ -9,6 +9,8 @@ import { PrismaService } from '../prisma/prisma.service';
 export async function startApp(): Promise<INestApplication> {
   // CI has no .env; JwtModule reads the secret when AppModule is loaded, hence the dynamic import.
   process.env.JWT_SECRET ??= 'test-secret';
+  // Tests drive the invoice job by hand (InvoicingService.processPending).
+  process.env.INVOICE_JOB = 'off';
   const { AppModule } = await import('../app.module');
   const app = await NestFactory.create(AppModule, { logger: false });
   app.setGlobalPrefix('api');
