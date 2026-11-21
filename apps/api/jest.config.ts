@@ -3,6 +3,8 @@ import type { Config } from 'jest';
 const config: Config = {
   rootDir: 'src',
   testEnvironment: 'node',
+  // Integration specs read DATABASE_URL from apps/api/.env locally; CI sets it directly.
+  setupFiles: ['dotenv/config'],
   testRegex: '.*\\.(spec|test)\\.ts$',
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.json' }] },
   collectCoverageFrom: [

@@ -1,8 +1,8 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
-  moduleFormat = "cjs"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
   importFileExtension = ""
+  moduleFormat        = "cjs"
 }
 
 datasource db {
@@ -20,23 +20,28 @@ model cash_registers {
   expected_closing_cop Decimal?  @db.Decimal(12, 2)
   actual_closing_cop   Decimal?  @db.Decimal(12, 2)
   status               String    @default("OPEN") @db.VarChar(20)
-  locations            locations @relation(fields: [location_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users                users     @relation(fields: [opened_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  organization_id      String    @default(dbgenerated("app_org_id()")) @db.Uuid
+  locations            locations @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "cash_registers_location_fkey")
+  users                users     @relation(fields: [opened_by, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "cash_registers_opened_by_fkey")
   orders               orders[]
+
+  @@unique([id, organization_id], map: "cash_registers_id_org_key")
 }
 
 model categories {
   id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id String        @db.Uuid
+  organization_id String        @default(dbgenerated("app_org_id()")) @db.Uuid
   name            String        @db.VarChar(100)
   sort_order      Int           @default(0)
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   products        products[]
+
+  @@unique([id, organization_id], map: "categories_id_org_key")
 }
 
 model customers {
   id                    String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id       String         @db.Uuid
+  organization_id       String         @default(dbgenerated("app_org_id()")) @db.Uuid
   full_name             String         @db.VarChar(120)
   identification_type   String?        @default("13") @db.VarChar(10)
   identification_number String?        @default("222222222222") @db.VarChar(30)
@@ -48,28 +53,34 @@ model customers {
   reservations          reservations[]
 
   @@unique([organization_id, phone])
+  @@unique([id, organization_id], map: "customers_id_org_key")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model dining_tables {
-  id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  location_id  String         @db.Uuid
-  name         String         @db.VarChar(40)
-  capacity     Int            @default(4)
-  status       String         @default("FREE") @db.VarChar(20)
-  locations    locations      @relation(fields: [location_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  orders       orders[]
-  reservations reservations[]
+  id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  location_id     String         @db.Uuid
+  name            String         @db.VarChar(40)
+  capacity        Int            @default(4)
+  status          String         @default("FREE") @db.VarChar(20)
+  organization_id String         @default(dbgenerated("app_org_id()")) @db.Uuid
+  locations       locations      @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "dining_tables_location_fkey")
+  orders          orders[]
+  reservations    reservations[]
+
+  @@unique([id, organization_id], map: "dining_tables_id_org_key")
 }
 
 model ingredients {
   id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id String            @db.Uuid
+  organization_id String            @default(dbgenerated("app_org_id()")) @db.Uuid
   name            String            @db.VarChar(120)
   unit            String            @db.VarChar(20)
   organizations   organizations     @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   location_stock  location_stock[]
   product_recipes product_recipes[]
+
+  @@unique([id, organization_id], map: "ingredients_id_org_key")
 }
 
 model location_products {
@@ -77,26 +88,28 @@ model location_products {
   product_id       String    @db.Uuid
   custom_price_cop Decimal?  @db.Decimal(12, 2)
   is_available     Boolean   @default(true)
-  locations        locations @relation(fields: [location_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  products         products  @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization_id  String    @default(dbgenerated("app_org_id()")) @db.Uuid
+  locations        locations @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "location_products_location_fkey")
+  products         products  @relation(fields: [product_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "location_products_product_fkey")
 
   @@id([location_id, product_id])
 }
 
 model location_stock {
-  location_id   String      @db.Uuid
-  ingredient_id String      @db.Uuid
-  current_qty   Decimal     @default(0) @db.Decimal(12, 3)
-  min_alert_qty Decimal     @default(0) @db.Decimal(12, 3)
-  ingredients   ingredients @relation(fields: [ingredient_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  locations     locations   @relation(fields: [location_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  location_id     String      @db.Uuid
+  ingredient_id   String      @db.Uuid
+  current_qty     Decimal     @default(0) @db.Decimal(12, 3)
+  min_alert_qty   Decimal     @default(0) @db.Decimal(12, 3)
+  organization_id String      @default(dbgenerated("app_org_id()")) @db.Uuid
+  ingredients     ingredients @relation(fields: [ingredient_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "location_stock_ingredient_fkey")
+  locations       locations   @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "location_stock_location_fkey")
 
   @@id([location_id, ingredient_id])
 }
 
 model locations {
   id                String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id   String              @db.Uuid
+  organization_id   String              @default(dbgenerated("app_org_id()")) @db.Uuid
   name              String              @db.VarChar(120)
   city              String              @db.VarChar(80)
   address           String
@@ -104,6 +117,7 @@ model locations {
   is_active         Boolean             @default(true)
   delivery_config   Json                @default("{\"zones\": [], \"enabled\": true, \"min_order_cop\": 15000}")
   created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  last_order_number Int                 @default(0)
   cash_registers    cash_registers[]
   dining_tables     dining_tables[]
   location_products location_products[]
@@ -111,6 +125,8 @@ model locations {
   organizations     organizations       @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   orders            orders[]
   reservations      reservations[]
+
+  @@unique([id, organization_id], map: "locations_id_org_key")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -122,19 +138,20 @@ model order_items {
   unit_price_cop     Decimal  @db.Decimal(12, 2)
   selected_modifiers Json     @default("[]")
   notes              String?
-  orders             orders   @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  products           products @relation(fields: [product_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  organization_id    String   @default(dbgenerated("app_org_id()")) @db.Uuid
+  orders             orders   @relation(fields: [order_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "order_items_order_fkey")
+  products           products @relation(fields: [product_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "order_items_product_fkey")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model orders {
   id                    String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id       String          @db.Uuid
+  organization_id       String          @default(dbgenerated("app_org_id()")) @db.Uuid
   location_id           String          @db.Uuid
   cash_register_id      String?         @db.Uuid
   table_id              String?         @db.Uuid
   customer_id           String?         @db.Uuid
-  order_number          Int             @default(autoincrement())
+  order_number          Int             @default(0)
   channel               String          @db.VarChar(20)
   order_type            String          @db.VarChar(20)
   status                String          @default("PENDING") @db.VarChar(25)
@@ -154,12 +171,14 @@ model orders {
   scheduled_for         DateTime?       @db.Timestamptz(6)
   created_at            DateTime        @default(now()) @db.Timestamptz(6)
   order_items           order_items[]
-  cash_registers        cash_registers? @relation(fields: [cash_register_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  customers             customers?      @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  locations             locations       @relation(fields: [location_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  cash_registers        cash_registers? @relation(fields: [cash_register_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_cash_register_fkey")
+  customers             customers?      @relation(fields: [customer_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_customer_fkey")
+  locations             locations       @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "orders_location_fkey")
   organizations         organizations   @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  dining_tables         dining_tables?  @relation(fields: [table_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dining_tables         dining_tables?  @relation(fields: [table_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_table_fkey")
 
+  @@unique([id, organization_id], map: "orders_id_org_key")
+  @@unique([location_id, order_number], map: "orders_location_number_key")
   @@index([factus_payment_ref], map: "idx_orders_factus_ref")
   @@index([organization_id, location_id, created_at(sort: Desc)], map: "idx_orders_org_loc_date")
 }
@@ -190,15 +209,16 @@ model product_recipes {
   product_id        String      @db.Uuid
   ingredient_id     String      @db.Uuid
   quantity_required Decimal     @db.Decimal(12, 3)
-  ingredients       ingredients @relation(fields: [ingredient_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  products          products    @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organization_id   String      @default(dbgenerated("app_org_id()")) @db.Uuid
+  ingredients       ingredients @relation(fields: [ingredient_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "product_recipes_ingredient_fkey")
+  products          products    @relation(fields: [product_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "product_recipes_product_fkey")
 
   @@id([product_id, ingredient_id])
 }
 
 model products {
   id                 String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id    String              @db.Uuid
+  organization_id    String              @default(dbgenerated("app_org_id()")) @db.Uuid
   category_id        String?             @db.Uuid
   name               String              @db.VarChar(150)
   description        String?
@@ -211,14 +231,16 @@ model products {
   location_products  location_products[]
   order_items        order_items[]
   product_recipes    product_recipes[]
-  categories         categories?         @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+  categories         categories?         @relation(fields: [category_id, organization_id], references: [id, organization_id], onDelete: SetNull, onUpdate: NoAction, map: "products_category_fkey")
   organizations      organizations       @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([id, organization_id], map: "products_id_org_key")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model reservations {
   id              String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id String         @db.Uuid
+  organization_id String         @default(dbgenerated("app_org_id()")) @db.Uuid
   location_id     String         @db.Uuid
   customer_id     String?        @db.Uuid
   table_id        String?        @db.Uuid
@@ -226,16 +248,16 @@ model reservations {
   reserved_at     DateTime       @db.Timestamptz(6)
   source          String         @default("MANUAL") @db.VarChar(20)
   status          String         @default("CONFIRMED") @db.VarChar(20)
-  customers       customers?     @relation(fields: [customer_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  locations       locations      @relation(fields: [location_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  customers       customers?     @relation(fields: [customer_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "reservations_customer_fkey")
+  locations       locations      @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "reservations_location_fkey")
   organizations   organizations  @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  dining_tables   dining_tables? @relation(fields: [table_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  dining_tables   dining_tables? @relation(fields: [table_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "reservations_table_fkey")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model users {
   id                   String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id      String           @db.Uuid
+  organization_id      String           @default(dbgenerated("app_org_id()")) @db.Uuid
   email                String           @unique @db.VarChar(150)
   password_hash        String
   full_name            String           @db.VarChar(120)
@@ -244,6 +266,8 @@ model users {
   created_at           DateTime         @default(now()) @db.Timestamptz(6)
   cash_registers       cash_registers[]
   organizations        organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([id, organization_id], map: "users_id_org_key")
 }
 
 model webhook_events {
