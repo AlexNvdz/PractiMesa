@@ -15,6 +15,9 @@ import { HealthController } from './health/health.controller';
 import { LocationsController } from './locations/locations.controller';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
 import { OrdersController } from './orders/orders.controller';
+import { FactusPayWebhookController } from './payments/factus-pay-webhook.controller';
+import { FactusPayService } from './payments/factus-pay.service';
+import { IntegrationsController } from './payments/integrations.controller';
 import { CashRegistersController } from './pos/cash-registers.controller';
 import { FloorsController } from './pos/floors.controller';
 import { TablesController } from './pos/tables.controller';
@@ -39,10 +42,13 @@ import { PrismaService } from './prisma/prisma.service';
     FloorsController,
     TablesController,
     OrdersController,
+    IntegrationsController,
+    FactusPayWebhookController,
   ],
   providers: [
     PrismaService,
     AuthService,
+    FactusPayService,
     LoginThrottlerGuard,
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: PrismaExceptionFilter },

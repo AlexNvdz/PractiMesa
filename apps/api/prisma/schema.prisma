@@ -194,24 +194,25 @@ model orders {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model organizations {
-  id                  String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  name                String         @db.VarChar(150)
-  slug                String         @unique @db.VarChar(80)
-  nit                 String?        @db.VarChar(30)
-  plan_tier           String         @db.VarChar(20)
-  max_locations       Int            @default(1)
-  subscription_status String         @default("TRIAL") @db.VarChar(20)
-  factus_config       Json           @default("{\"sandbox\": true, \"client_id\": null, \"numbering_range_id\": null}")
-  ai_agent_enabled    Boolean        @default(false)
-  created_at          DateTime       @default(now()) @db.Timestamptz(6)
-  categories          categories[]
-  customers           customers[]
-  ingredients         ingredients[]
-  locations           locations[]
-  orders              orders[]
-  products            products[]
-  reservations        reservations[]
-  users               users[]
+  id                       String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name                     String                     @db.VarChar(150)
+  slug                     String                     @unique @db.VarChar(80)
+  nit                      String?                    @db.VarChar(30)
+  plan_tier                String                     @db.VarChar(20)
+  max_locations            Int                        @default(1)
+  subscription_status      String                     @default("TRIAL") @db.VarChar(20)
+  factus_config            Json                       @default("{\"sandbox\": true, \"client_id\": null, \"numbering_range_id\": null}")
+  ai_agent_enabled         Boolean                    @default(false)
+  created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  categories               categories[]
+  customers                customers[]
+  ingredients              ingredients[]
+  locations                locations[]
+  orders                   orders[]
+  organization_credentials organization_credentials[]
+  products                 products[]
+  reservations             reservations[]
+  users                    users[]
 }
 
 model product_recipes {
@@ -315,4 +316,15 @@ model floors {
 
   @@unique([id, location_id, organization_id], map: "floors_id_location_org_key")
   @@unique([location_id, name], map: "floors_location_name_key")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model organization_credentials {
+  organization_id String        @db.Uuid
+  provider        String        @db.VarChar(20)
+  sealed          String
+  updated_at      DateTime      @default(now()) @db.Timestamptz(6)
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([organization_id, provider])
 }
