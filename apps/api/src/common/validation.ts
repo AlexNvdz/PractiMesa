@@ -26,6 +26,10 @@ export const bool: Check = (v) => typeof v === 'boolean';
 export const uuid: Check = (v) => typeof v === 'string' && UUID_RE.test(v);
 /** Absolute http(s) URL or a path on this site (seed uses static images). */
 export const url: Check = (v) => typeof v === 'string' && v.length <= 2000 && /^(https?:\/\/|\/)\S+$/i.test(v);
+export const oneOf =
+  (...values: string[]): Check =>
+  (v) =>
+    typeof v === 'string' && values.includes(v);
 export const nullable =
   (check: Check): Check =>
   (v) =>

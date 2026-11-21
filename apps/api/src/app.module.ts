@@ -14,6 +14,9 @@ import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { HealthController } from './health/health.controller';
 import { LocationsController } from './locations/locations.controller';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
+import { CashRegistersController } from './pos/cash-registers.controller';
+import { FloorsController } from './pos/floors.controller';
+import { TablesController } from './pos/tables.controller';
 import { PrismaService } from './prisma/prisma.service';
 
 @Module({
@@ -31,6 +34,9 @@ import { PrismaService } from './prisma/prisma.service';
     ProductsController,
     IngredientsController,
     LocationCatalogController,
+    CashRegistersController,
+    FloorsController,
+    TablesController,
   ],
   providers: [
     PrismaService,

@@ -17,3 +17,5 @@ apps/api/src/generated/
 /apps/web/DESIGN.md
 /apps/web/.impeccable/
 /.claude/settings.local.json
+# CocoIndex Code (ccc)
+/.cocoindex_code/

@@ -108,8 +108,18 @@ describe('cross-organization references (composite FKs)', () => {
 
   it('rejects a table on another organization location even on the system path', async () => {
     await expect(
-      db.dining_tables.create({ data: { organization_id: orgA, location_id: locB, name: 'Mesa 1' } }),
+      db.dining_tables.create({ data: { organization_id: orgA, location_id: locB, name: 'Mesa 1', number: 1 } }),
     ).rejects.toThrow();
+  });
+
+  it('rejects a table on a floor of another location even on the system path', async () => {
+    const floor = await db.floors.create({ data: { organization_id: orgA, location_id: locA1, name: 'Piso 2' } });
+    await expect(
+      db.dining_tables.create({
+        data: { organization_id: orgA, location_id: locA2, floor_id: floor.id, name: 'Mesa 1', number: 1 },
+      }),
+    ).rejects.toThrow();
+    await expect(db.forTenant(orgB).floors.findMany()).resolves.toEqual([]);
   });
 });
 
