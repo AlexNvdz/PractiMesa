@@ -39,7 +39,7 @@ export class CashRegistersController {
     });
   }
 
-  /** Cash count: expected = opening amount + cash sales paid into this register; the cashier enters the actual amount. */
+  /** Cash count: expected = opening amount + cash sales (with their tips) paid into this register; the cashier enters the actual amount. */
   @Post(':id/close')
   close(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const tenant = req.tenant!;
@@ -53,7 +53,7 @@ export class CashRegistersController {
       if (!register) throw new NotFoundException('Registro no encontrado');
       if (register.status !== 'OPEN') throw new ConflictException('La caja ya está cerrada');
       const cash = await tx.orders.aggregate({
-        _sum: { total_cop: true },
+        _sum: { total_cop: true, tip_cop: true },
         where: { cash_register_id: id, payment_method: 'CASH', payment_status: 'PAID' },
       });
       return tx.cash_registers.update({
@@ -62,7 +62,9 @@ export class CashRegistersController {
           ...data,
           status: 'CLOSED',
           closed_at: new Date(),
-          expected_closing_cop: new Prisma.Decimal(register.opening).plus(cash._sum.total_cop ?? 0),
+          expected_closing_cop: new Prisma.Decimal(register.opening)
+            .plus(cash._sum.total_cop ?? 0)
+            .plus(cash._sum.tip_cop ?? 0),
         },
       });
     });
