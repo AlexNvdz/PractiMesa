@@ -1,6 +1,6 @@
 import { BadGatewayException, BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { seal, unseal } from './sealed';
+import { deleteCredentials, hasCredentials, readCredentials, writeCredentials } from './credentials';
 
 export interface PayAccount {
   email: string;
@@ -18,8 +18,6 @@ export interface Collection {
   breb_key: string | null;
 }
 
-const PROVIDER = 'FACTUS_PAY';
-const context = (organizationId: string) => `${organizationId}:${PROVIDER}`;
 const baseUrl = () => process.env.FACTUS_PAY_API_URL ?? 'https://pay-api-sandbox.factus.com.co';
 const json = (res: Response) => res.json().catch(() => ({})) as Promise<{ token?: string; data?: Collection; message?: string }>;
 
@@ -40,15 +38,12 @@ export class FactusPayService {
     return email && password && webhookKey ? { email, password, webhookKey } : null;
   }
 
-  async ownAccount(organizationId: string): Promise<PayAccount | null> {
-    const row = await this.prisma.organization_credentials.findUnique({
-      where: { organization_id_provider: { organization_id: organizationId, provider: PROVIDER } },
-    });
-    return row ? (JSON.parse(unseal(row.sealed, context(organizationId))) as PayAccount) : null;
+  ownAccount(organizationId: string) {
+    return readCredentials<PayAccount>(this.prisma, organizationId, 'FACTUS_PAY');
   }
 
-  async hasOwnAccount(organizationId: string) {
-    return (await this.prisma.organization_credentials.count({ where: { organization_id: organizationId, provider: PROVIDER } })) > 0;
+  hasOwnAccount(organizationId: string) {
+    return hasCredentials(this.prisma, organizationId, 'FACTUS_PAY');
   }
 
   async accountFor(organizationId: string): Promise<PayAccount> {
@@ -59,7 +54,6 @@ export class FactusPayService {
 
   /** Logs in with the credentials (proves them) and stores them sealed. */
   async saveAccount(organizationId: string, account: PayAccount) {
-    const sealed = seal(JSON.stringify(account), context(organizationId));
     const key = this.tokenKey(account);
     this.tokens.delete(key);
     try {
@@ -67,16 +61,11 @@ export class FactusPayService {
     } catch {
       throw new BadRequestException('Factus Pay rechazó ese correo y contraseña');
     }
-    const id = { organization_id: organizationId, provider: PROVIDER };
-    await this.prisma.organization_credentials.upsert({
-      where: { organization_id_provider: id },
-      create: { ...id, sealed },
-      update: { sealed, updated_at: new Date() },
-    });
+    await writeCredentials(this.prisma, organizationId, 'FACTUS_PAY', account);
   }
 
-  async removeAccount(organizationId: string) {
-    await this.prisma.organization_credentials.deleteMany({ where: { organization_id: organizationId, provider: PROVIDER } });
+  removeAccount(organizationId: string) {
+    return deleteCredentials(this.prisma, organizationId, 'FACTUS_PAY');
   }
 
   /** Idempotent on reference_code: asking again returns the existing collection. `expiration` in seconds. */

@@ -24,6 +24,7 @@ export const int =
     Number.isInteger(v) && num(min, max)(v);
 export const bool: Check = (v) => typeof v === 'boolean';
 export const uuid: Check = (v) => typeof v === 'string' && UUID_RE.test(v);
+export const email: Check = (v) => text(150)(v) && /^\S+@\S+$/.test(v as string);
 /** Absolute http(s) URL or a path on this site (seed uses static images). */
 export const url: Check = (v) => typeof v === 'string' && v.length <= 2000 && /^(https?:\/\/|\/)\S+$/i.test(v);
 export const oneOf =

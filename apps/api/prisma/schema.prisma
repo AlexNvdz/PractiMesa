@@ -179,6 +179,11 @@ model orders {
   scheduled_for         DateTime?       @db.Timestamptz(6)
   created_at            DateTime        @default(now()) @db.Timestamptz(6)
   tip_cop               Decimal         @default(0) @db.Decimal(12, 2)
+  invoice_customer      Json?
+  factus_attempts       Int             @default(0)
+  factus_error          String?
+  factus_qr_url         String?
+  factus_pdf_url        String?
   order_items           order_items[]
   cash_registers        cash_registers? @relation(fields: [cash_register_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_cash_register_fkey")
   customers             customers?      @relation(fields: [customer_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_customer_fkey")
