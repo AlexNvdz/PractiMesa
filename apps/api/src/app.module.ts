@@ -12,6 +12,8 @@ import { ProductsController } from './catalog/products.controller';
 import { RolesGuard } from './common/guards/roles.guard';
 import { TenantMiddleware } from './common/tenant/tenant.middleware';
 import { HealthController } from './health/health.controller';
+import { LiveEventsService } from './live/live-events.service';
+import { LiveController } from './live/live.controller';
 import { LocationsController } from './locations/locations.controller';
 import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
 import { FactusService } from './invoicing/factus.service';
@@ -48,6 +50,7 @@ import { PrismaService } from './prisma/prisma.service';
     IntegrationsController,
     FactusPayWebhookController,
     InvoicingController,
+    LiveController,
   ],
   providers: [
     PrismaService,
@@ -55,6 +58,7 @@ import { PrismaService } from './prisma/prisma.service';
     FactusPayService,
     FactusService,
     InvoicingService,
+    LiveEventsService,
     LoginThrottlerGuard,
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: PrismaExceptionFilter },
