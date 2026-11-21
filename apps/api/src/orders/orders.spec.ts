@@ -58,8 +58,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  // order_items -> products is NO ACTION: drop the orders before the products cascade with the org.
-  await db.orders.deleteMany({ where: { organization_id: orgA.id } });
+  // Orders with sold products go with the organization (migration 0007).
   await db.organizations.deleteMany({ where: { id: { in: [orgA.id, orgB.id] } } });
   await db.$disconnect();
   await app.close();
@@ -208,6 +207,24 @@ describe('table accounts', () => {
     const { body } = await cashier1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: water, quantity: 1 }] });
     const paid = await cashier1('POST', `/orders/${body.id}/pay`, { payment_method: 'MANUAL_TRANSFER', tip_cop: 1500 });
     expect(paid.body).toMatchObject({ payment_status: 'PAID', status: 'CONFIRMED', tip_cop: '1500', stock_alerts: [] });
+  });
+
+  it('voids a line of an open account, only for cashiers and above', async () => {
+    const { body } = await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [bigLatte, { product_id: water, quantity: 1 }] });
+    const line = body.order_items.find((i: { product_id: string }) => i.product_id === water).id;
+    expect((await waiter1('DELETE', `/orders/${body.id}/items/${line}`)).status).toBe(403);
+
+    const voided = await cashier1('DELETE', `/orders/${body.id}/items/${line}`);
+    expect(voided.status).toBe(200);
+    expect(voided.body).toMatchObject({ total_cop: '23000', tax_cop: '1703.7', subtotal_cop: '21296.3' });
+    expect(voided.body.order_items).toHaveLength(1);
+    expect((await cashier1('DELETE', `/orders/${body.id}/items/${line}`)).status).toBe(404);
+
+    const other = (await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: water, quantity: 1 }] })).body;
+    const otherLine = other.order_items[0].id;
+    expect((await cashier1('DELETE', `/orders/${body.id}/items/${otherLine}`)).status).toBe(404);
+    await cashier1('POST', `/orders/${other.id}/pay`, { payment_method: 'CASH' });
+    expect((await cashier1('DELETE', `/orders/${other.id}/items/${otherLine}`)).status).toBe(409);
   });
 
   it('hides orders of other locations and organizations', async () => {

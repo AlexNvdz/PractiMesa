@@ -3,6 +3,7 @@ import {
   Body,
   ConflictException,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
@@ -200,6 +201,28 @@ export class OrdersController {
         include: ORDER_INCLUDE,
       });
       return { ...paid, stock_alerts };
+    });
+  }
+
+  /** Voids a line of an open account (a mistake, a dish the table no longer wants); totals drop by what it added. */
+  @Delete(':id/items/:itemId')
+  @Roles('OWNER', 'ADMIN', 'CASHIER')
+  voidItem(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Param('itemId', ParseUUIDPipe) itemId: string) {
+    const tenant = req.tenant!;
+    const locationId = requireLocation(tenant);
+    return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
+      await lockOpenOrder(tx, id, locationId);
+      const item = await tx.order_items.delete({ where: { id: itemId, order_id: id } });
+      const sum = totals([item]);
+      return tx.orders.update({
+        where: { id },
+        data: {
+          subtotal_cop: { decrement: sum.subtotal_cop },
+          tax_cop: { decrement: sum.tax_cop },
+          total_cop: { decrement: sum.total_cop },
+        },
+        include: ORDER_INCLUDE,
+      });
     });
   }
 
