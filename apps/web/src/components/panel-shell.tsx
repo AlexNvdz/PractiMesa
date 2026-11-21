@@ -34,7 +34,7 @@ const NAV: NavItem[] = [
   { label: "Pedidos", icon: ReceiptText },
   { label: "Caja", icon: Wallet, href: "/caja", roles: ["OWNER", "ADMIN", "CASHIER"] },
   { label: "Cocina", icon: ChefHat, href: "/cocina", roles: ["OWNER", "ADMIN", "KITCHEN"] },
-  { label: "Catálogo", icon: BookOpen },
+  { label: "Catálogo", icon: BookOpen, href: "/catalogo", roles: ["OWNER", "ADMIN"] },
   { label: "Inventario", icon: Package },
   { label: "Reportes", icon: ChartColumn },
 ];

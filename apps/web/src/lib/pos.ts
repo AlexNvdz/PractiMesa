@@ -26,6 +26,7 @@ export interface ModifierGroup {
 export interface Category {
   id: string;
   name: string;
+  sort_order: number;
 }
 
 export interface Product {
@@ -33,8 +34,21 @@ export interface Product {
   name: string;
   category_id: string | null;
   base_price_cop: string;
+  tax_rate: string;
+  description: string | null;
   modifiers_schema: ModifierGroup[];
   is_active: boolean;
+}
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: string;
+}
+
+export interface RecipeItem {
+  ingredient_id: string;
+  quantity_required: string;
 }
 
 export interface LocationProduct {
