@@ -1,17 +1,20 @@
-import { Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Put, Req } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Put, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { requireLocation } from '../common/tenant/tenant-context';
 import { oneOf, parseBody } from '../common/validation';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** Kitchen flow of a round, in order. A round only moves forward and may skip steps (a drink goes straight to READY). */
+/**
+ * Kitchen flow of a round, in order. A round moves forward and may skip steps (a drink goes straight to READY);
+ * it moves back only to undo a tap, naming the step the screen saw (`from`).
+ */
 const STEPS = ['PENDING', 'PREPARING', 'READY', 'DELIVERED'] as const;
 type Step = (typeof STEPS)[number];
 const STAMP = { PREPARING: 'started_at', READY: 'ready_at', DELIVERED: 'delivered_at' } as const;
 const STATE = { PENDING: 'pendiente', PREPARING: 'en preparación', READY: 'lista', DELIVERED: 'entregada' } as const;
 
-/** Who serves the table only marks a round delivered; the kitchen and managers move every step. */
+/** Who serves the table only marks a round delivered (or undoes that); the kitchen and managers move every step. */
 const SERVERS = new Set(['CASHIER', 'WAITER']);
 
 const ROUND_INCLUDE = {
@@ -43,20 +46,35 @@ export class KitchenController {
     });
   }
 
-  /** Moves a round to a later step. Repeating the current step is a no-op, so a double tap is harmless. */
+  /**
+   * Moves a round to a later step; repeating the current step is a no-op, so a double tap is harmless.
+   * With `from` it moves only if the round is still at that step, in either direction (undo).
+   */
   @Put('rounds/:id')
   advance(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
-    const { status } = parseBody<{ status: Exclude<Step, 'PENDING'> }>(body, { status: oneOf(...STEPS.slice(1)) }, ['status']);
-    if (status !== 'DELIVERED' && SERVERS.has(tenant.role)) {
+    const { status, from } = parseBody<{ status: Step; from?: Step }>(body, { status: oneOf(...STEPS), from: oneOf(...STEPS) }, ['status']);
+    const target = STEPS.indexOf(status);
+    const back = from !== undefined && STEPS.indexOf(from) > target;
+    if (status === 'PENDING' && !back) throw new BadRequestException('Una comanda solo vuelve a pendiente al deshacer');
+    if (SERVERS.has(tenant.role) && !(status === 'DELIVERED' || (status === 'READY' && from === 'DELIVERED'))) {
       throw new ForbiddenException('Tu rol solo puede marcar comandas como entregadas');
     }
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
-      // One conditional update: two terminals tapping at once cannot move a round backwards.
+      // One conditional update: two terminals tapping at once cannot move a round backwards by accident.
       await tx.order_rounds.updateMany({
-        where: { id, status: { in: STEPS.slice(0, STEPS.indexOf(status)) }, orders: { location_id: locationId, status: { not: 'CANCELLED' } } },
-        data: { status, [STAMP[status]]: new Date() },
+        where: {
+          id,
+          status: from ?? { in: STEPS.slice(0, target) },
+          orders: { location_id: locationId, status: { not: 'CANCELLED' } },
+        },
+        data: {
+          status,
+          // Steps after the new one did not happen (undo); the new one happens now unless it is a step back.
+          ...Object.fromEntries(STEPS.slice(target + 1).map((step) => [STAMP[step as keyof typeof STAMP], null])),
+          ...(back ? {} : { [STAMP[status as keyof typeof STAMP]]: new Date() }),
+        },
       });
       const round = await tx.order_rounds.findFirst({ where: { id, orders: { location_id: locationId } }, include: ROUND_INCLUDE });
       if (!round) throw new NotFoundException('Registro no encontrado');

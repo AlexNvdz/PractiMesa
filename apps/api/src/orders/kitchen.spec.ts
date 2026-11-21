@@ -127,6 +127,31 @@ describe('kitchen rounds', () => {
     expect(next.order_rounds.map((r: { round: number }) => r.round)).toEqual([1, 2, 3, 4]);
   });
 
+  it('undoes a step only from the step the screen saw', async () => {
+    const pickup = (await cashier1('POST', '/orders', { order_type: 'PICKUP', ...line(soup) })).body;
+    const url = `/kitchen/rounds/${pickup.order_rounds[0].id}`;
+    expect((await kitchen1('PUT', url, { status: 'PENDING' })).status).toBe(400);
+    await kitchen1('PUT', url, { status: 'READY' });
+
+    const undone = await kitchen1('PUT', url, { status: 'PREPARING', from: 'READY' });
+    expect(undone.status).toBe(200);
+    // Back to "in preparation": it was ready by mistake, so it never was ready.
+    expect(undone.body).toMatchObject({ status: 'PREPARING', ready_at: null });
+    expect((await kitchen1('PUT', url, { status: 'PREPARING', from: 'READY' })).status).toBe(200); // double tap
+    const stale = await kitchen1('PUT', url, { status: 'PENDING', from: 'READY' });
+    expect(stale.status).toBe(409);
+    expect(stale.body.message).toBe('La comanda ya está en preparación');
+
+    // Who serves undoes a delivery, and nothing else.
+    await kitchen1('PUT', url, { status: 'READY' });
+    expect((await waiter1('PUT', url, { status: 'PREPARING', from: 'READY' })).status).toBe(403);
+    await waiter1('PUT', url, { status: 'DELIVERED' });
+    expect(ids(await kitchenRounds(kitchen1))).not.toContain(pickup.order_rounds[0].id);
+    const back = await waiter1('PUT', url, { status: 'READY', from: 'DELIVERED' });
+    expect(back.body).toMatchObject({ status: 'READY', ready_at: expect.any(String), delivered_at: null });
+    expect(ids(await kitchenRounds(kitchen1))).toContain(pickup.order_rounds[0].id);
+  });
+
   it('announces a round change as an event of its order', async () => {
     const seen: LiveEvent[] = [];
     const unsubscribe = app.get(LiveEventsService).subscribe((e) => e && seen.push(e));

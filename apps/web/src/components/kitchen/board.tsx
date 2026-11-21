@@ -1,9 +1,10 @@
 "use client";
 
-import { Clock, LoaderCircle } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { Clock, LoaderCircle, Volume2, VolumeX } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNow } from "@/components/pos/service";
 import { button } from "@/components/ui";
+import { type Undo, UndoToast } from "@/components/undo-toast";
 import { errorMessage, useApi } from "@/lib/api";
 import { elapsed } from "@/lib/format";
 import { useLive } from "@/lib/live";
@@ -16,6 +17,28 @@ const LANES = [
 ] as const satisfies { status: KitchenRound["status"]; title: string; empty: string; action: string; next: RoundStatus }[];
 
 type Lane = (typeof LANES)[number];
+const DONE = { PREPARING: "en preparación", READY: "lista", DELIVERED: "entregada" } as const;
+
+// shortcut: one threshold for every dish and business; make it a location setting when someone asks for it.
+const LATE_MINUTES = 15;
+const SOUND_KEY = "pm-kitchen-sound";
+
+/** Two short rising tones made with Web Audio (no file to load). */
+function chime(audio: AudioContext) {
+  const start = audio.currentTime;
+  for (const [i, frequency] of [880, 1320].entries()) {
+    const at = start + i * 0.18;
+    const tone = audio.createOscillator();
+    const volume = audio.createGain();
+    tone.frequency.value = frequency;
+    volume.gain.setValueAtTime(0.0001, at);
+    volume.gain.exponentialRampToValueAtTime(0.3, at + 0.02);
+    volume.gain.exponentialRampToValueAtTime(0.0001, at + 0.16);
+    tone.connect(volume).connect(audio.destination);
+    tone.start(at);
+    tone.stop(at + 0.17);
+  }
+}
 
 const where = (r: KitchenRound) => r.orders.dining_tables?.name ?? `Para llevar #${r.orders.order_number}`;
 
@@ -30,6 +53,36 @@ export function KitchenBoard() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const latest = useRef(0);
+  // The board only renders in the browser (after login), so localStorage is there.
+  const [sound, setSound] = useState(() => localStorage.getItem(SOUND_KEY) !== "off");
+  const [audible, setAudible] = useState(false);
+  const audio = useRef<AudioContext | null>(null);
+  const seen = useRef<Set<string> | null>(null);
+  const [undo, setUndo] = useState<Undo | null>(null);
+
+  // Browsers keep audio muted until the person interacts with the page; any tap unlocks it.
+  useEffect(() => {
+    const unlock = () => {
+      audio.current ??= new AudioContext();
+      void audio.current.resume().then(() => setAudible(audio.current?.state === "running"));
+    };
+    window.addEventListener("click", unlock);
+    return () => window.removeEventListener("click", unlock);
+  }, []);
+
+  // A round id the board had not shown before = a new ticket. The first load only takes note.
+  useEffect(() => {
+    if (!rounds) return;
+    const arrived = seen.current !== null && rounds.some((r) => !seen.current!.has(r.id));
+    // Union, not replace: a delivered round that an undo brings back is not a new ticket.
+    seen.current = new Set([...(seen.current ?? []), ...rounds.map((r) => r.id)]);
+    if (arrived && sound && audio.current?.state === "running") chime(audio.current);
+  }, [rounds, sound]);
+
+  const toggleSound = () => {
+    localStorage.setItem(SOUND_KEY, sound ? "off" : "on");
+    setSound(!sound);
+  };
 
   const load = useCallback(async () => {
     // Events can overlap: only the newest request may paint the board.
@@ -47,7 +100,16 @@ export function KitchenBoard() {
     (event) => event.type === "order" && void load(),
   );
 
-  const advance = async (round: KitchenRound, next: RoundStatus) => {
+  const revert = async (round: KitchenRound, from: RoundStatus) => {
+    try {
+      await api(`/kitchen/rounds/${round.id}`, "PUT", { status: round.status, from });
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+    void load();
+  };
+
+  const advance = async (round: KitchenRound, next: Lane["next"]) => {
     setBusy(round.id);
     setError(null);
     try {
@@ -57,6 +119,7 @@ export function KitchenBoard() {
           ? (all?.filter((r) => r.id !== round.id) ?? null)
           : (all?.map((r) => (r.id === round.id ? { ...r, status: next } : r)) ?? null),
       );
+      setUndo({ message: `${where(round)} · ronda ${round.round}: ${DONE[next]}`, run: () => revert(round, next) });
     } catch (err) {
       // Another terminal moved it or the order was cancelled: say why and catch up.
       setError(errorMessage(err));
@@ -80,6 +143,18 @@ export function KitchenBoard() {
 
   return (
     <div>
+      <div className="mb-5 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+        {sound && !audible && <p className="text-sm text-muted">Toca la pantalla una vez para oír las comandas nuevas.</p>}
+        <button
+          type="button"
+          aria-pressed={sound}
+          onClick={toggleSound}
+          className={`${button.secondary} pl-3.5 aria-pressed:border-accent aria-pressed:bg-accent-soft aria-pressed:text-accent-strong`}
+        >
+          {sound ? <Volume2 size={18} strokeWidth={2.25} aria-hidden /> : <VolumeX size={18} strokeWidth={2.25} aria-hidden />}
+          Sonido de comandas
+        </button>
+      </div>
       {error && (
         <p role="alert" className="mb-5 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">
           {error}
@@ -109,21 +184,27 @@ export function KitchenBoard() {
           );
         })}
       </div>
+      <UndoToast undo={undo} onClose={() => setUndo(null)} />
     </div>
   );
 }
 
 function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; lane: Lane; now: number; busy: boolean; onAdvance: () => void }) {
+  // Late = still not ready this long after it was sent; ready tickets wait on the floor, not the kitchen.
+  const late = round.status !== "READY" && now - Date.parse(round.created_at) >= LATE_MINUTES * 60_000;
   return (
-    <article aria-label={`${where(round)}, ronda ${round.round}`} className="rounded-panel border border-line bg-surface">
+    <article
+      aria-label={`${where(round)}, ronda ${round.round}${late ? ", atrasada" : ""}`}
+      className={`rounded-panel border bg-surface ${late ? "border-danger" : "border-line"}`}
+    >
       {/* Title on its own line: three lanes beside the sidebar leave ~200px per ticket on a 1024px tablet. */}
-      <header className="border-b border-line px-4 py-3">
+      <header className={`rounded-t-[7px] border-b px-4 py-3 ${late ? "border-danger/30 bg-danger-soft" : "border-line"}`}>
         <h3 className="text-xl font-semibold tracking-[-0.01em] text-balance">{where(round)}</h3>
         <div className="figures mt-0.5 flex items-center justify-between gap-3">
           <p className="text-sm text-muted">Ronda {round.round}</p>
-          <p className="flex items-center gap-1.5 text-[15px] font-medium text-ink-2">
-            <Clock size={18} strokeWidth={2.25} aria-hidden />
-            <span className="sr-only">Enviada hace</span>
+          <p className={`flex items-center gap-1.5 text-[15px] ${late ? "font-semibold text-danger" : "font-medium text-ink-2"}`}>
+            <Clock size={18} strokeWidth={late ? 2.5 : 2.25} aria-hidden />
+            {late ? "Atrasada · " : <span className="sr-only">Enviada hace </span>}
             {elapsed(round.created_at, now)}
           </p>
         </div>
