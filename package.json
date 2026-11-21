@@ -12,5 +12,8 @@
     "test": "npm test -w apps/api",
     "sonar": "npx --yes @sonar/scan",
     "sonar:local": "npx --yes @sonar/scan -Dsonar.host.url=http://localhost:9000"
+  },
+  "engines": {
+    "node": ">=24.7"
   }
 }

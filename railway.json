@@ -1,0 +1,11 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "buildCommand": "npm ci --ignore-scripts && npm run db:generate -w apps/api && npm run build -w apps/api"
+  },
+  "deploy": {
+    "startCommand": "npm run db:migrate -w apps/api && npm start -w apps/api",
+    "healthcheckPath": "/api/health",
+    "restartPolicyType": "ON_FAILURE"
+  }
+}
