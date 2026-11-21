@@ -6,10 +6,9 @@ import { PanelLoading, PanelShell } from "@/components/panel-shell";
 import { button, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import { type Me, useRequiredMe } from "@/lib/auth";
-import { cop, dateTime, time } from "@/lib/format";
+import { cop, dateTime, pesos, time } from "@/lib/format";
 import type { CashRegister } from "@/lib/pos";
 
-const pesos = (text: string) => Number(text.replace(/\D/g, "")) || 0;
 
 export default function CajaPage() {
   const me = useRequiredMe();

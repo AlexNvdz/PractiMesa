@@ -3,6 +3,9 @@ const COP = new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP",
 /** "$ 15.000". The API sends money as decimal strings. */
 export const cop = (value: string | number) => COP.format(Number(value));
 
+/** Whole pesos typed in a money field ("$ 15.000" → 15000). */
+export const pesos = (text: string) => Number(text.replace(/\D/g, "")) || 0;
+
 const TIME = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit", timeZone: "America/Bogota" });
 const DATE_TIME = new Intl.DateTimeFormat("es-CO", {
   day: "numeric",

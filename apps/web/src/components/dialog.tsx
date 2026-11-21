@@ -11,11 +11,14 @@ export function Dialog({
   open,
   onClose,
   title,
+  wide = false,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  /** Long forms (product editor). */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -35,7 +38,7 @@ export function Dialog({
       onClose={onClose}
       // A click on the backdrop lands on the dialog element itself.
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="m-auto max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] max-w-[480px] overflow-y-auto overscroll-contain rounded-panel border border-transparent bg-surface p-0 text-ink shadow-panel transition-[opacity,scale,display,overlay] transition-discrete duration-150 ease-out backdrop:bg-ink/30 not-open:opacity-0 starting:open:opacity-0 motion-safe:not-open:scale-[0.96] motion-safe:starting:open:scale-[0.96]"
+      className={`m-auto max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] ${wide ? "max-w-[640px]" : "max-w-[480px]"} overflow-y-auto overscroll-contain rounded-panel border border-transparent bg-surface p-0 text-ink shadow-panel transition-[opacity,scale,display,overlay] transition-discrete duration-150 ease-out backdrop:bg-ink/30 not-open:opacity-0 starting:open:opacity-0 motion-safe:not-open:scale-[0.96] motion-safe:starting:open:scale-[0.96]`}
     >
       <div className="p-5 sm:p-6">
         <div className="mb-5 flex items-start justify-between gap-4">
