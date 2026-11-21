@@ -146,6 +146,28 @@ describe('floors and dining tables', () => {
     expect((await adminA1('PATCH', `/tables/${tableId}`, { floor_id: null })).body).toMatchObject({ floor_id: null });
   });
 
+  it('creates a batch of tables on a floor, numbered after the last one, all or none', async () => {
+    type Table = { number: number; name: string; floor_id: string | null; capacity: number };
+    const patio = (await adminA1('POST', '/floors', { name: 'Patio' })).body.id;
+    const res = await adminA1('POST', '/tables/batch', { count: 3, floor_id: patio, capacity: 2 });
+    expect(res.status).toBe(201);
+    expect(res.body.map((t: Table) => [t.number, t.name, t.floor_id, t.capacity])).toEqual([
+      [12, 'Mesa #12', patio, 2],
+      [13, 'Mesa #13', patio, 2],
+      [14, 'Mesa #14', patio, 2],
+    ]);
+
+    // 101..103 would be next, but the name "Mesa #102" is taken: nothing is created.
+    await adminA1('POST', '/tables', { number: 100, name: 'Mesa #102' });
+    expect((await adminA1('POST', '/tables/batch', { count: 3 })).status).toBe(409);
+    expect((await adminA1('GET', '/tables')).body.some((t: Table) => t.number === 101)).toBe(false);
+
+    expect((await adminA1('POST', '/tables/batch', {})).status).toBe(400);
+    expect((await adminA1('POST', '/tables/batch', { count: 51 })).status).toBe(400);
+    expect((await adminA1('POST', '/tables/batch', { count: 1, floor_id: floor2 })).status).toBe(400);
+    expect((await waiterA1('POST', '/tables/batch', { count: 1 })).status).toBe(403);
+  });
+
   it('lets floor staff change the status, only owner/admin edit tables and floors', async () => {
     const res = await waiterA1('PUT', `/tables/${tableId}/status`, { status: 'RESERVED' });
     expect(res.body).toMatchObject({ status: 'RESERVED' });
@@ -158,6 +180,16 @@ describe('floors and dining tables', () => {
     const renamed = await adminA1('PATCH', `/tables/${tableId}`, { name: 'Ventana', capacity: 6 });
     expect(renamed.body).toMatchObject({ name: 'Ventana', number: 1, capacity: 6, status: 'RESERVED' });
     expect((await adminA1('PATCH', `/floors/${floor1}`, { name: 'Piso 2' })).body).toMatchObject({ name: 'Piso 2' });
+  });
+
+  it('renames a default-named table when its number changes, keeps custom names', async () => {
+    const tables: { id: string; number: number }[] = (await adminA1('GET', '/tables')).body;
+    const second = tables.find((t) => t.number === 2)!.id;
+    expect((await adminA1('PATCH', `/tables/${second}`, { number: 30 })).body).toMatchObject({ number: 30, name: 'Mesa #30' });
+    expect((await adminA1('PATCH', `/tables/${tableId}`, { number: 31 })).body).toMatchObject({ number: 31, name: 'Ventana' });
+    const both = await adminA1('PATCH', `/tables/${second}`, { number: 32, name: 'Rincón' });
+    expect(both.body).toMatchObject({ number: 32, name: 'Rincón' });
+    expect((await adminA2('PATCH', `/tables/${second}`, { number: 33 })).status).toBe(404);
   });
 
   it('validates the body', async () => {
