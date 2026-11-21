@@ -63,6 +63,15 @@ export interface OrderItem {
   products: { name: string };
 }
 
+/** Kitchen state of a round (comanda), in order. */
+export type RoundStatus = "PENDING" | "PREPARING" | "READY" | "DELIVERED";
+
+export interface OrderRound {
+  id: string;
+  round: number;
+  status: RoundStatus;
+}
+
 export interface Order {
   id: string;
   order_number: number;
@@ -82,7 +91,19 @@ export interface Order {
   factus_error: string | null;
   created_at: string;
   order_items: OrderItem[];
+  order_rounds: OrderRound[];
   dining_tables: { name: string } | null;
+}
+
+/** A ticket on the kitchen screen (GET /kitchen/rounds): a round still to serve. */
+export interface KitchenRound {
+  id: string;
+  order_id: string;
+  round: number;
+  status: Exclude<RoundStatus, "DELIVERED">;
+  created_at: string;
+  orders: { order_number: number; order_type: Order["order_type"]; dining_tables: { name: string } | null };
+  order_items: Pick<OrderItem, "id" | "quantity" | "selected_modifiers" | "notes" | "products">[];
 }
 
 export interface StockAlert {

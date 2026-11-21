@@ -4,6 +4,7 @@ import { ArrowLeft, ShoppingBag, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { button } from "@/components/ui";
+import { type Undo, UndoToast } from "@/components/undo-toast";
 import { errorMessage, useApi } from "@/lib/api";
 import type { Me } from "@/lib/auth";
 import { cop, elapsed } from "@/lib/format";
@@ -17,6 +18,7 @@ import {
   type MenuItem,
   type Order,
   type OrderItem,
+  type OrderRound,
   type Product,
 } from "@/lib/pos";
 import { AccountPanel } from "./account-panel";
@@ -35,8 +37,12 @@ interface Confirm {
 const CHARGE_ROLES = new Set(["OWNER", "ADMIN", "CASHIER"]);
 const STATUS_LABEL = { FREE: "Libre", OCCUPIED: "Ocupada", RESERVED: "Reservada" } as const;
 
-/** Minutes since an account opened, refreshed every half minute. */
-function useNow() {
+/** A round the kitchen finished and nobody has taken to the table yet. */
+const hasReady = (o: Order) => o.order_rounds.some((r) => r.status === "READY");
+const readyChip = <span className="inline-block rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Lista para servir</span>;
+
+/** Clock for elapsed times ("12 min"), refreshed every half minute. */
+export function useNow() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -70,6 +76,7 @@ export function Service({ me }: { me: Me }) {
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [undo, setUndo] = useState<Undo | null>(null);
 
   const put = useCallback((order: Order) => setOrders((all) => ({ ...all, [order.id]: order })), []);
 
@@ -206,6 +213,27 @@ export function Service({ me }: { me: Me }) {
         }),
     });
 
+  const setRound = (orderId: string, roundId: string, status: OrderRound["status"]) =>
+    setOrders((all) => ({
+      ...all,
+      [orderId]: { ...all[orderId], order_rounds: all[orderId].order_rounds.map((r) => (r.id === roundId ? { ...r, status } : r)) },
+    }));
+
+  const deliver = (round: OrderRound) =>
+    run(async () => {
+      const orderId = account!.id;
+      await api(`/kitchen/rounds/${round.id}`, "PUT", { status: "DELIVERED" });
+      setRound(orderId, round.id, "DELIVERED");
+      setUndo({
+        message: `${account!.dining_tables?.name ?? `Para llevar #${account!.order_number}`} · ronda ${round.round}: entregada`,
+        run: () =>
+          run(async () => {
+            await api(`/kitchen/rounds/${round.id}`, "PUT", { status: "READY", from: "DELIVERED" });
+            setRound(orderId, round.id, "READY");
+          }),
+      });
+    });
+
   const setTableStatus = (status: "FREE" | "RESERVED") =>
     run(async () => {
       const saved = await api<DiningTable>(`/tables/${table!.id}/status`, "PUT", { status });
@@ -300,6 +328,7 @@ export function Service({ me }: { me: Me }) {
             onCharge={() => setCharging(account!.id)}
             onVoid={voidItem}
             onCancel={cancel}
+            onDeliver={deliver}
             extra={
               table && !account && canOrder ? (
                 <button
@@ -356,6 +385,8 @@ export function Service({ me }: { me: Me }) {
           </div>
         )}
       </Dialog>
+
+      <UndoToast undo={undo} onClose={() => setUndo(null)} />
     </div>
   );
 }
@@ -448,6 +479,7 @@ function FloorMap({
                           <span className="figures block text-xs text-muted">
                             {order.payment_status === "PENDING_QR" ? "QR pendiente" : `${items} productos`} · {elapsed(order.created_at, now)}
                           </span>
+                          {hasReady(order) && <span className="mt-1.5 block">{readyChip}</span>}
                         </>
                       ) : (
                         <span
@@ -484,6 +516,7 @@ function FloorMap({
                     {o.payment_status === "PENDING_QR" ? "QR pendiente" : `${o.order_items.reduce((n, i) => n + i.quantity, 0)} productos`} ·{" "}
                     {elapsed(o.created_at, now)}
                   </span>
+                  {hasReady(o) && readyChip}
                   <span className="figures text-[15px] font-medium">{cop(o.total_cop)}</span>
                 </button>
               </li>
