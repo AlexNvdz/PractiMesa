@@ -120,9 +120,10 @@ describe('products', () => {
         subtotal_cop: 8500,
         tax_cop: 680,
         total_cop: 9180,
-        order_items: { create: { product_id: productId, quantity: 1, unit_price_cop: 8500 } },
+        order_rounds: { create: { round: 1 } },
       },
     });
+    await db.order_items.create({ data: { organization_id: orgA.id, order_id: order.id, product_id: productId, quantity: 1, unit_price_cop: 8500 } });
     expect((await adminA('DELETE', `/products/${productId}`)).status).toBe(409);
     await db.orders.delete({ where: { id: order.id } });
 

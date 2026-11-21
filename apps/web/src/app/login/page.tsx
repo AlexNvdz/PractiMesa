@@ -19,6 +19,8 @@ const DEMO_ROLES: { role: Role; label: string }[] = [
   { role: "KITCHEN", label: "Cocina" },
 ];
 
+const START: Partial<Record<Role, string>> = { CASHIER: "/mesas", WAITER: "/mesas", KITCHEN: "/cocina" };
+
 function messageFor(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 401) return "Correo o contraseña incorrectos.";
@@ -47,8 +49,8 @@ export default function LoginPage() {
   const demoId = useId();
 
   useEffect(() => {
-    // Cashiers and waiters work on the table map; everyone else starts at the summary.
-    if (status === "authenticated") router.replace(me?.user.role === "CASHIER" || me?.user.role === "WAITER" ? "/mesas" : "/");
+    // Cashiers and waiters work on the table map, the kitchen on its screen; everyone else starts at the summary.
+    if (status === "authenticated") router.replace(START[me?.user.role ?? "OWNER"] ?? "/");
   }, [status, me, router]);
 
   // The API answers 404 where demo login is off: then there are no demo buttons.

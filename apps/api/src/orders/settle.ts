@@ -3,6 +3,7 @@ import type { Prisma } from '../generated/prisma/client';
 
 export const ORDER_INCLUDE = {
   order_items: { orderBy: { round: 'asc' }, include: { products: { select: { name: true } } } },
+  order_rounds: { orderBy: { round: 'asc' }, select: { id: true, round: true, status: true } },
   dining_tables: { select: { name: true } },
 } satisfies Prisma.ordersInclude;
 

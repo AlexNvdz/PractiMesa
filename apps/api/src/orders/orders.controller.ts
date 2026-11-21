@@ -48,6 +48,7 @@ async function lockEditableOrder(tx: Prisma.TransactionClient, id: string, locat
 
 async function addItems(tx: Prisma.TransactionClient, orderId: string, locationId: string, round: number, items: ItemInput[]) {
   const lines = await priceItems(tx, locationId, items);
+  await tx.order_rounds.create({ data: { order_id: orderId, round } });
   await tx.order_items.createMany({ data: lines.map((line) => ({ ...line, order_id: orderId, round })) });
   const sum = totals(lines);
   return tx.orders.update({
@@ -145,7 +146,8 @@ export class OrdersController {
     const items = parseItems(body);
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       await lockEditableOrder(tx, id, locationId);
-      const last = await tx.order_items.aggregate({ _max: { round: true }, where: { order_id: id } });
+      // From the rounds, not the items: a round whose lines were all voided keeps its number.
+      const last = await tx.order_rounds.aggregate({ _max: { round: true }, where: { order_id: id } });
       return addItems(tx, id, locationId, (last._max.round ?? 0) + 1, items);
     });
   }

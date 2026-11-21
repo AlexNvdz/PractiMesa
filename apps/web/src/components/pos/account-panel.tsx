@@ -1,12 +1,20 @@
 "use client";
 
-import { ArrowLeft, LoaderCircle, X } from "lucide-react";
+import { ArrowLeft, Check, LoaderCircle, X } from "lucide-react";
 import { button } from "@/components/ui";
 import { cop } from "@/lib/format";
-import type { Order, OrderItem } from "@/lib/pos";
+import type { Order, OrderItem, OrderRound } from "@/lib/pos";
 import { type DraftLine, linePrice, Stepper } from "./menu-picker";
 
 const modifiersOf = (picks: { option: string }[]) => picks.map((p) => p.option).join(" · ");
+
+/** Kitchen state of a round as the floor reads it; ready is the one that asks for action. */
+const ROUND_STATE = {
+  PENDING: { label: "En cola", className: "bg-ground text-muted" },
+  PREPARING: { label: "En preparación", className: "bg-ground text-ink-2" },
+  READY: { label: "Lista para servir", className: "bg-success-soft text-success" },
+  DELIVERED: { label: "Entregada", className: "text-muted" },
+} as const;
 
 /** Open account of a table or a counter order: sent rounds, the round being composed and the actions. */
 export function AccountPanel({
@@ -26,6 +34,7 @@ export function AccountPanel({
   onCharge,
   onVoid,
   onCancel,
+  onDeliver,
   extra,
 }: {
   title: string;
@@ -44,11 +53,13 @@ export function AccountPanel({
   onCharge: () => void;
   onVoid: (item: OrderItem) => void;
   onCancel: () => void;
+  onDeliver: (round: OrderRound) => void;
   extra?: React.ReactNode;
 }) {
   const pendingQr = order?.payment_status === "PENDING_QR";
   const rounds = new Map<number, OrderItem[]>();
   for (const item of order?.order_items ?? []) rounds.set(item.round, [...(rounds.get(item.round) ?? []), item]);
+  const kitchenState = (round: number) => order?.order_rounds.find((r) => r.round === round);
   const draftTotal = draft.reduce((sum, l) => sum + linePrice(l), 0);
   const update = (key: string, quantity: number) => onDraft(draft.map((l) => (l.key === key ? { ...l, quantity } : l)));
 
@@ -78,7 +89,7 @@ export function AccountPanel({
       <div className="min-h-32 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
         {[...rounds].map(([round, items]) => (
           <div key={round} className="mb-5 last:mb-0">
-            <h3 className="mb-2 text-sm font-semibold text-ink-2">Ronda {round}</h3>
+            <RoundHeading round={round} kitchen={kitchenState(round)} canDeliver={canOrder} busy={busy} onDeliver={onDeliver} />
             <ul className="space-y-3">
               {items.map((item) => (
                 <li key={item.id} className="flex items-start gap-3">
@@ -190,5 +201,37 @@ export function AccountPanel({
         )}
       </footer>
     </section>
+  );
+}
+
+function RoundHeading({
+  round,
+  kitchen,
+  canDeliver,
+  busy,
+  onDeliver,
+}: {
+  round: number;
+  kitchen?: OrderRound;
+  canDeliver: boolean;
+  busy: boolean;
+  onDeliver: (round: OrderRound) => void;
+}) {
+  const state = kitchen && ROUND_STATE[kitchen.status];
+  return (
+    <div className="mb-2 flex min-h-8 items-center gap-2">
+      <h3 className="text-sm font-semibold text-ink-2">Ronda {round}</h3>
+      {state && (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${state.className}`}>
+          {kitchen.status === "DELIVERED" && <Check size={14} strokeWidth={2.25} aria-hidden />}
+          {state.label}
+        </span>
+      )}
+      {canDeliver && kitchen?.status === "READY" && (
+        <button type="button" disabled={busy} onClick={() => onDeliver(kitchen)} className={`${button.ghost} -my-1 -mr-2 ml-auto h-10! px-3 text-sm!`}>
+          Marcar entregada
+        </button>
+      )}
+    </div>
   );
 }

@@ -33,7 +33,7 @@ const NAV: NavItem[] = [
   { label: "Mesas", icon: LayoutGrid, href: "/mesas", roles: ["OWNER", "ADMIN", "CASHIER", "WAITER"] },
   { label: "Pedidos", icon: ReceiptText },
   { label: "Caja", icon: Wallet, href: "/caja", roles: ["OWNER", "ADMIN", "CASHIER"] },
-  { label: "Cocina", icon: ChefHat },
+  { label: "Cocina", icon: ChefHat, href: "/cocina", roles: ["OWNER", "ADMIN", "KITCHEN"] },
   { label: "Catálogo", icon: BookOpen },
   { label: "Inventario", icon: Package },
   { label: "Reportes", icon: ChartColumn },

@@ -17,6 +17,7 @@ import {
   type MenuItem,
   type Order,
   type OrderItem,
+  type OrderRound,
   type Product,
 } from "@/lib/pos";
 import { AccountPanel } from "./account-panel";
@@ -35,8 +36,8 @@ interface Confirm {
 const CHARGE_ROLES = new Set(["OWNER", "ADMIN", "CASHIER"]);
 const STATUS_LABEL = { FREE: "Libre", OCCUPIED: "Ocupada", RESERVED: "Reservada" } as const;
 
-/** Minutes since an account opened, refreshed every half minute. */
-function useNow() {
+/** Clock for elapsed times ("12 min"), refreshed every half minute. */
+export function useNow() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -206,6 +207,16 @@ export function Service({ me }: { me: Me }) {
         }),
     });
 
+  const deliver = (round: OrderRound) =>
+    run(async () => {
+      await api(`/kitchen/rounds/${round.id}`, "PUT", { status: "DELIVERED" });
+      const id = account!.id;
+      setOrders((all) => ({
+        ...all,
+        [id]: { ...all[id], order_rounds: all[id].order_rounds.map((r) => (r.id === round.id ? { ...r, status: "DELIVERED" } : r)) },
+      }));
+    });
+
   const setTableStatus = (status: "FREE" | "RESERVED") =>
     run(async () => {
       const saved = await api<DiningTable>(`/tables/${table!.id}/status`, "PUT", { status });
@@ -300,6 +311,7 @@ export function Service({ me }: { me: Me }) {
             onCharge={() => setCharging(account!.id)}
             onVoid={voidItem}
             onCancel={cancel}
+            onDeliver={deliver}
             extra={
               table && !account && canOrder ? (
                 <button

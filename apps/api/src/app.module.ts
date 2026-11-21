@@ -19,6 +19,7 @@ import { PrismaExceptionFilter } from './prisma/prisma-exception.filter';
 import { FactusService } from './invoicing/factus.service';
 import { InvoicingController } from './invoicing/invoicing.controller';
 import { InvoicingService } from './invoicing/invoicing.service';
+import { KitchenController } from './orders/kitchen.controller';
 import { OrdersController } from './orders/orders.controller';
 import { FactusPayWebhookController } from './payments/factus-pay-webhook.controller';
 import { FactusPayService } from './payments/factus-pay.service';
@@ -47,6 +48,7 @@ import { PrismaService } from './prisma/prisma.service';
     FloorsController,
     TablesController,
     OrdersController,
+    KitchenController,
     IntegrationsController,
     FactusPayWebhookController,
     InvoicingController,
