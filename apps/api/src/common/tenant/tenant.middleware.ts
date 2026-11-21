@@ -52,9 +52,9 @@ export class TenantMiddleware implements NestMiddleware {
 
     const org = user.organizations;
     const orgLocationIds = org.locations.map((l) => l.id);
-    // NULL allowed_location_ids = every location of the org (OWNER/ADMIN default).
+    // Empty allowed_location_ids = every location of the org (Prisma reads SQL NULL as []).
     const allowed = user.allowed_location_ids;
-    const locationIds = allowed ? orgLocationIds.filter((id) => allowed.includes(id)) : orgLocationIds;
+    const locationIds = allowed.length ? orgLocationIds.filter((id) => allowed.includes(id)) : orgLocationIds;
 
     const requested = req.header('x-location-id');
     let locationId: string | undefined;

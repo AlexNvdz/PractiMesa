@@ -13,3 +13,7 @@ apps/api/src/generated/
 /docs/
 /CLAUDE.md
 /AGENTS.md
+/apps/web/PRODUCT.md
+/apps/web/DESIGN.md
+/apps/web/.impeccable/
+/.claude/settings.local.json

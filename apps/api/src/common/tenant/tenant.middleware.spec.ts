@@ -8,11 +8,11 @@ const jwt = new JwtService({ secret: 'test-secret' });
 const LOC_A1 = 'loc-a1';
 const LOC_A2 = 'loc-a2';
 
-function dbUser(overrides: Partial<{ allowed_location_ids: string[] | null; locations: string[]; plan: string }> = {}) {
+function dbUser(overrides: Partial<{ allowed_location_ids: string[]; locations: string[]; plan: string }> = {}) {
   return {
     id: 'user-a',
     role: 'CASHIER',
-    allowed_location_ids: overrides.allowed_location_ids ?? null,
+    allowed_location_ids: overrides.allowed_location_ids ?? [],
     organizations: {
       id: 'org-a',
       plan_tier: overrides.plan ?? 'MULTI',
@@ -82,6 +82,13 @@ describe('TenantMiddleware', () => {
     const r = req(await token());
     await mw.use(r, res, jest.fn());
     expect(r.tenant?.locationId).toBe(LOC_A1);
+  });
+
+  it('treats an empty allowed list (SQL NULL) as every org location', async () => {
+    const { mw } = setup(dbUser({ allowed_location_ids: [] }));
+    const r = req(await token(), LOC_A2);
+    await mw.use(r, res, jest.fn());
+    expect(r.tenant?.locationIds).toEqual([LOC_A1, LOC_A2]);
   });
 
   it('leaves location undefined for org-level requests with several locations', async () => {
