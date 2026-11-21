@@ -152,7 +152,7 @@ describe('table accounts', () => {
   it('charges into the open register, deducts stock and frees the table', async () => {
     expect((await waiter1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(403);
     expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(409); // no register
-    expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'FACTUS_PAY_QR' })).status).toBe(400);
+    expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CARD' })).status).toBe(400);
     const tip = (t: object) => cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH', ...t });
     expect((await tip({ tip_percent: 7 })).status).toBe(400);
     expect((await tip({ tip_cop: -1 })).status).toBe(400);
