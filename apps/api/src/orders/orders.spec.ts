@@ -154,11 +154,24 @@ describe('table accounts', () => {
     expect((await waiter1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(403);
     expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(409); // no register
     expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'FACTUS_PAY_QR' })).status).toBe(400);
+    const tip = (t: object) => cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH', ...t });
+    expect((await tip({ tip_percent: 7 })).status).toBe(400);
+    expect((await tip({ tip_cop: -1 })).status).toBe(400);
+    expect((await tip({ tip_percent: 5, tip_cop: 1000 })).status).toBe(400);
 
     const register = (await cashier1('POST', '/cash-registers', { opening_amount_cop: 50000 })).body.id;
-    const paid = await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' });
+    const paid = await tip({ tip_percent: 10 });
     expect(paid.status).toBe(201);
-    expect(paid.body).toMatchObject({ payment_status: 'PAID', payment_method: 'CASH', status: 'COMPLETED', cash_register_id: register });
+    // Total 29000, tax 1703.70 + 957.98, subtotal 26338.32: 10% tip rounded to whole pesos = 2634.
+    expect(paid.body).toMatchObject({
+      payment_status: 'PAID',
+      payment_method: 'CASH',
+      status: 'COMPLETED',
+      cash_register_id: register,
+      subtotal_cop: '26338.32',
+      total_cop: '29000',
+      tip_cop: '2634',
+    });
     // 2 lattes: coffee 1000 - 36 = 964 (alert at 950 not reached); milk had no stock row: -400.
     expect(paid.body.stock_alerts).toEqual([
       { ingredient_id: milk, name: 'Leche', unit: 'ml', current_qty: '-400.000', min_alert_qty: '0.000' },
@@ -173,9 +186,9 @@ describe('table accounts', () => {
     expect((await cashier1('POST', `/orders/${orderId}/cancel`)).status).toBe(409);
     expect((await waiter1('GET', '/orders')).body.map((o: { id: string }) => o.id)).not.toContain(orderId);
 
-    // Cash count of 2.5: opening 50000 + this cash sale 29000.
-    const closed = await cashier1('POST', `/cash-registers/${register}/close`, { actual_closing_cop: 79000 });
-    expect(closed.body.expected_closing_cop).toBe('79000');
+    // Cash count of 2.5: opening 50000 + this cash sale 29000 + its tip 2634.
+    const closed = await cashier1('POST', `/cash-registers/${register}/close`, { actual_closing_cop: 81634 });
+    expect(closed.body.expected_closing_cop).toBe('81634');
   });
 
   it('cancels an unpaid account without touching stock and frees the table', async () => {
@@ -193,8 +206,8 @@ describe('table accounts', () => {
   it('keeps a paid counter order in the kitchen flow', async () => {
     await cashier1('POST', '/cash-registers', { opening_amount_cop: 0 });
     const { body } = await cashier1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: water, quantity: 1 }] });
-    const paid = await cashier1('POST', `/orders/${body.id}/pay`, { payment_method: 'MANUAL_TRANSFER' });
-    expect(paid.body).toMatchObject({ payment_status: 'PAID', status: 'CONFIRMED', stock_alerts: [] });
+    const paid = await cashier1('POST', `/orders/${body.id}/pay`, { payment_method: 'MANUAL_TRANSFER', tip_cop: 1500 });
+    expect(paid.body).toMatchObject({ payment_status: 'PAID', status: 'CONFIRMED', tip_cop: '1500', stock_alerts: [] });
   });
 
   it('hides orders of other locations and organizations', async () => {

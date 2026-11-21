@@ -13,8 +13,8 @@ import {
 import type { Request } from 'express';
 import { Roles } from '../common/guards/roles.guard';
 import { requireLocation } from '../common/tenant/tenant-context';
-import { oneOf, parseBody, uuid } from '../common/validation';
-import type { Prisma } from '../generated/prisma/client';
+import { MAX_COP, num, oneOf, parseBody, uuid } from '../common/validation';
+import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemInput, parseItems, priceItems, totals } from './order-items';
 
@@ -26,10 +26,17 @@ const ORDER_INCLUDE = {
 /** Open account: not paid and not cancelled. */
 const OPEN = { payment_status: { not: 'PAID' }, status: { not: 'CANCELLED' } } satisfies Prisma.ordersWhereInput;
 
+/** Voluntary tip (Ley 1935 de 2018): a suggested 5% or 10%, an amount the customer types, or none (omit both). */
+const PAYMENT = {
+  payment_method: oneOf('CASH', 'MANUAL_TRANSFER'),
+  tip_percent: (v: unknown) => v === 5 || v === 10,
+  tip_cop: num(0, MAX_COP),
+};
+
 /** Locks an open order of the location: 404 if it is not there, 409 if it is already paid or cancelled. */
 async function lockOpenOrder(tx: Prisma.TransactionClient, id: string, locationId: string) {
-  const [order] = await tx.$queryRaw<{ order_type: string; table_id: string | null; open: boolean }[]>`
-    SELECT order_type, table_id, (payment_status <> 'PAID' AND status <> 'CANCELLED') AS open
+  const [order] = await tx.$queryRaw<{ order_type: string; table_id: string | null; subtotal: string; open: boolean }[]>`
+    SELECT order_type, table_id, subtotal_cop::text AS subtotal, (payment_status <> 'PAID' AND status <> 'CANCELLED') AS open
       FROM orders WHERE id = ${id}::uuid AND location_id = ${locationId}::uuid FOR UPDATE`;
   if (!order) throw new NotFoundException('Registro no encontrado');
   if (!order.open) throw new ConflictException('La cuenta ya está pagada o cancelada');
@@ -139,6 +146,7 @@ export class OrdersController {
   /**
    * Charges the order into the open register and deducts its recipes from the location stock
    * (stock may go negative). Returns the ingredients at or below their alert level.
+   * The tip is charged on top of the total; a suggested percentage applies to the subtotal before tax.
    */
   @Post(':id/pay')
   @Roles('OWNER', 'ADMIN', 'CASHIER')
@@ -146,13 +154,17 @@ export class OrdersController {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
     // FACTUS_PAY_QR arrives with the Factus Pay integration (2.7).
-    const { payment_method } = parseBody<{ payment_method: string }>(
+    const { payment_method, tip_percent, tip_cop } = parseBody<{ payment_method: string; tip_percent?: number; tip_cop?: number }>(
       body,
-      { payment_method: oneOf('CASH', 'MANUAL_TRANSFER') },
+      PAYMENT,
       ['payment_method'],
     );
+    if (tip_percent !== undefined && tip_cop !== undefined) throw new BadRequestException('Elige un porcentaje o un valor de propina, no ambos');
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       const order = await lockOpenOrder(tx, id, locationId);
+      const tip = tip_percent
+        ? new Prisma.Decimal(order.subtotal).times(tip_percent).dividedBy(100).toDecimalPlaces(0)
+        : new Prisma.Decimal(tip_cop ?? 0);
       // FOR SHARE: a register close (FOR UPDATE) waits for this sale, or this sale sees the register closed.
       const [register] = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM cash_registers WHERE location_id = ${locationId}::uuid AND status = 'OPEN' FOR SHARE`;
@@ -180,6 +192,7 @@ export class OrdersController {
         data: {
           payment_method,
           payment_status: 'PAID',
+          tip_cop: tip,
           cash_register_id: register.id,
           // Paying closes a table account; a counter order stays in the kitchen flow until delivered.
           ...(order.order_type === 'DINE_IN' ? { status: 'COMPLETED' } : {}),
