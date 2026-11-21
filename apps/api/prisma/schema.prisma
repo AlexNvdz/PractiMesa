@@ -145,6 +145,8 @@ model order_items {
   selected_modifiers Json     @default("[]")
   notes              String?
   organization_id    String   @default(dbgenerated("app_org_id()")) @db.Uuid
+  round              Int      @default(1)
+  tax_rate           Decimal  @default(0) @db.Decimal(5, 2)
   orders             orders   @relation(fields: [order_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "order_items_order_fkey")
   products           products @relation(fields: [product_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "order_items_product_fkey")
 }
