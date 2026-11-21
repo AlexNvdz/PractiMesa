@@ -64,11 +64,16 @@ model dining_tables {
   capacity        Int            @default(4)
   status          String         @default("FREE") @db.VarChar(20)
   organization_id String         @default(dbgenerated("app_org_id()")) @db.Uuid
+  floor_id        String?        @db.Uuid
+  number          Int
+  floors          floors?        @relation(fields: [floor_id, location_id, organization_id], references: [id, location_id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "dining_tables_floor_fkey")
   locations       locations      @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "dining_tables_location_fkey")
   orders          orders[]
   reservations    reservations[]
 
   @@unique([id, organization_id], map: "dining_tables_id_org_key")
+  @@unique([location_id, name], map: "dining_tables_location_name_key")
+  @@unique([location_id, number], map: "dining_tables_location_number_key")
 }
 
 model ingredients {
@@ -120,6 +125,7 @@ model locations {
   last_order_number Int                 @default(0)
   cash_registers    cash_registers[]
   dining_tables     dining_tables[]
+  floors            floors[]
   location_products location_products[]
   location_stock    location_stock[]
   organizations     organizations       @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -292,4 +298,18 @@ model refresh_tokens {
   users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_refresh_tokens_user")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model floors {
+  id              String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String          @default(dbgenerated("app_org_id()")) @db.Uuid
+  location_id     String          @db.Uuid
+  name            String          @db.VarChar(40)
+  sort_order      Int             @default(0)
+  dining_tables   dining_tables[]
+  locations       locations       @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "floors_location_fkey")
+
+  @@unique([id, location_id, organization_id], map: "floors_id_location_org_key")
+  @@unique([location_id, name], map: "floors_location_name_key")
 }
