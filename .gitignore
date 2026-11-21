@@ -8,3 +8,8 @@ coverage/
 !.env.example
 *.log
 apps/api/src/generated/
+
+# Agent context and planning docs: local only, never pushed
+/docs/
+/CLAUDE.md
+/AGENTS.md
