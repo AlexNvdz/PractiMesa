@@ -14,6 +14,7 @@ const config: Config = {
     '!main.ts',
     '!**/*.module.ts',
     '!generated/**',
+    '!testing/**',
   ],
   coverageDirectory: '../coverage',
   coverageReporters: ['lcov', 'text-summary'],
