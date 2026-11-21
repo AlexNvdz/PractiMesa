@@ -19,19 +19,20 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ROLE_LABEL, useAuth, type Me } from "@/lib/auth";
+import { ROLE_LABEL, useAuth, type Me, type Role } from "@/lib/auth";
 
 interface NavItem {
   label: string;
   icon: LucideIcon;
   href?: string; // modules without a route yet render as "Pronto"
+  roles?: Role[]; // hidden from other roles
 }
 
 const NAV: NavItem[] = [
   { label: "Inicio", icon: House, href: "/" },
-  { label: "Mesas", icon: LayoutGrid },
+  { label: "Mesas", icon: LayoutGrid, href: "/mesas", roles: ["OWNER", "ADMIN", "CASHIER", "WAITER"] },
   { label: "Pedidos", icon: ReceiptText },
-  { label: "Caja", icon: Wallet },
+  { label: "Caja", icon: Wallet, href: "/caja", roles: ["OWNER", "ADMIN", "CASHIER"] },
   { label: "Cocina", icon: ChefHat },
   { label: "Catálogo", icon: BookOpen },
   { label: "Inventario", icon: Package },
@@ -69,7 +70,7 @@ function Sidebar({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
         className="flex-1 overflow-y-auto overscroll-contain px-3 py-2"
       >
         <ul className="space-y-0.5">
-          {NAV.map(({ label, icon: Icon, href }) => {
+          {NAV.filter((item) => !item.roles || item.roles.includes(me.user.role)).map(({ label, icon: Icon, href }) => {
             if (!href) {
               return (
                 <li key={label}>
@@ -156,12 +157,16 @@ export function PanelLoading() {
 export function PanelShell({
   me,
   title,
+  wide = false,
   children,
 }: {
   me: Me;
   title: string;
+  /** Operation screens (table map) use the whole width. */
+  wide?: boolean;
   children: React.ReactNode;
 }) {
+  const { setLocation } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const drawer = useRef<HTMLDialogElement>(null);
   const location = me.locations.find((l) => l.id === me.current_location_id);
@@ -214,15 +219,33 @@ export function PanelShell({
             <Menu size={20} aria-hidden />
           </button>
           <h1 className="text-[15px] font-semibold">{title}</h1>
-          {location && (
-            <p className="ml-auto flex items-center gap-1.5 text-sm text-muted">
+          {me.locations.length > 1 ? (
+            <label className="ml-auto flex items-center gap-1.5 text-sm text-muted">
               <MapPin size={16} strokeWidth={2.5} aria-hidden />
-              <span className="font-medium text-ink-2">{location.name}</span>
-              <span className="hidden sm:inline">· {location.city}</span>
-            </p>
+              <span className="sr-only">Sede</span>
+              <select
+                value={me.current_location_id ?? ""}
+                onChange={(e) => setLocation(e.target.value)}
+                className="h-10 rounded-control border border-line-strong bg-surface pr-8 pl-2.5 font-medium text-ink-2 transition-[border-color] duration-150 hover:border-muted"
+              >
+                {me.locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name} · {l.city}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            location && (
+              <p className="ml-auto flex items-center gap-1.5 text-sm text-muted">
+                <MapPin size={16} strokeWidth={2.5} aria-hidden />
+                <span className="font-medium text-ink-2">{location.name}</span>
+                <span className="hidden sm:inline">· {location.city}</span>
+              </p>
+            )
           )}
         </header>
-        <main className="mx-auto max-w-[1120px] px-4 py-8 md:px-8 md:py-10">
+        <main className={`mx-auto px-4 py-8 md:px-8 md:py-10 ${wide ? "max-w-[1440px]" : "max-w-[1120px]"}`}>
           {children}
         </main>
       </div>

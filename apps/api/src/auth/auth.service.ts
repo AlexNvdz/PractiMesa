@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,6 +31,25 @@ export class AuthService {
     const user = await this.prisma.users.findUnique({ where: { email: email.trim().toLowerCase() } });
     const valid = await verifyPassword(password, user?.password_hash ?? (await this.dummyHash));
     if (!user || !valid) throw new UnauthorizedException('Correo o contraseña incorrectos');
+    return this.issue(user.id);
+  }
+
+  demoOrganizations(slugs: string[]) {
+    return this.prisma.organizations.findMany({
+      where: { slug: { in: slugs } },
+      select: { slug: true, name: true, plan_tier: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /** Session of the first user with the role in the organization; the controller only passes demo slugs. */
+  async demoLogin(slug: string, role: string): Promise<Tokens> {
+    const user = await this.prisma.users.findFirst({
+      where: { role, organizations: { slug } },
+      orderBy: { created_at: 'asc' },
+      select: { id: true },
+    });
+    if (!user) throw new NotFoundException('Ese usuario de demo no existe');
     return this.issue(user.id);
   }
 

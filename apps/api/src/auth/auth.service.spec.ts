@@ -1,5 +1,5 @@
 // Integration test: needs Postgres with migrations applied.
-import { UnauthorizedException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -29,6 +29,15 @@ afterAll(async () => {
 });
 
 describe('AuthService', () => {
+  it('lists the requested demo organizations and logs in as the first user of a role', async () => {
+    await expect(auth.demoOrganizations([`auth-${suffix}`, 'no-existe'])).resolves.toEqual([
+      { slug: `auth-${suffix}`, name: 'Auth test', plan_tier: 'SINGLE' },
+    ]);
+    const tokens = await auth.demoLogin(`auth-${suffix}`, 'OWNER');
+    await expect(jwt.verifyAsync(tokens.accessToken)).resolves.toMatchObject({ sub: userId });
+    await expect(auth.demoLogin(`auth-${suffix}`, 'KITCHEN')).rejects.toBeInstanceOf(NotFoundException);
+  });
+
   it('logs in with case-insensitive email and issues a JWT for the user', async () => {
     const tokens = await auth.login(`  ${email.toUpperCase()} `, 's3cret-pass');
     await expect(jwt.verifyAsync(tokens.accessToken)).resolves.toMatchObject({ sub: userId });

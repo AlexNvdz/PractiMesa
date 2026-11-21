@@ -1,6 +1,6 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AuthController, LoginThrottlerGuard, readCookie, REFRESH_COOKIE } from './auth.controller';
+import { AuthController, DEMO_SLUGS, DemoThrottlerGuard, LoginThrottlerGuard, readCookie, REFRESH_COOKIE } from './auth.controller';
 import type { AuthService } from './auth.service';
 
 const tokens = { accessToken: 'access', refreshToken: 'refresh' };
@@ -10,6 +10,8 @@ function setup() {
     login: jest.fn().mockResolvedValue(tokens),
     refresh: jest.fn().mockResolvedValue(tokens),
     logout: jest.fn().mockResolvedValue(undefined),
+    demoOrganizations: jest.fn().mockResolvedValue([{ slug: 'cafe-ejemplo', name: 'Café Ejemplo', plan_tier: 'SINGLE' }]),
+    demoLogin: jest.fn().mockResolvedValue(tokens),
   };
   const res = { cookie: jest.fn(), clearCookie: jest.fn() } as unknown as Response;
   return { controller: new AuthController(service as unknown as AuthService), service, res };
@@ -62,6 +64,43 @@ describe('AuthController', () => {
 
   it('readCookie returns undefined without cookies', () => {
     expect(readCookie(reqWithCookie(), REFRESH_COOKIE)).toBeUndefined();
+  });
+});
+
+describe('demo login', () => {
+  // A developer's .env may turn it on: every test sets it explicitly.
+  beforeEach(() => delete process.env.DEMO_LOGIN);
+
+  it('does not exist unless DEMO_LOGIN=on', async () => {
+    const { controller, service, res } = setup();
+    expect(() => controller.demoOrganizations()).toThrow(NotFoundException);
+    await expect(controller.demoLogin({ slug: 'cafe-ejemplo', role: 'OWNER' }, res)).rejects.toBeInstanceOf(NotFoundException);
+    expect(service.demoLogin).not.toHaveBeenCalled();
+  });
+
+  it('lists the demo organizations and opens a session like login', async () => {
+    process.env.DEMO_LOGIN = 'on';
+    const { controller, service, res } = setup();
+    await expect(controller.demoOrganizations()).resolves.toHaveLength(1);
+    expect(service.demoOrganizations).toHaveBeenCalledWith(DEMO_SLUGS);
+    await expect(controller.demoLogin({ slug: 'cadena-ejemplo', role: 'KITCHEN' }, res)).resolves.toEqual({ access_token: 'access', expires_in: 900 });
+    expect(service.demoLogin).toHaveBeenCalledWith('cadena-ejemplo', 'KITCHEN');
+    expect(res.cookie).toHaveBeenCalledWith(REFRESH_COOKIE, 'refresh', expect.objectContaining({ httpOnly: true }));
+  });
+
+  it.each([{ slug: 'un-cliente-real', role: 'OWNER' }, { slug: 'cafe-ejemplo', role: 'ADMIN' }, { slug: 'cafe-ejemplo' }, undefined])(
+    'rejects anything but a demo organization and role: %p',
+    async (body) => {
+      process.env.DEMO_LOGIN = 'on';
+      const { controller, service, res } = setup();
+      await expect(controller.demoLogin(body, res)).rejects.toBeInstanceOf(BadRequestException);
+      expect(service.demoLogin).not.toHaveBeenCalled();
+    },
+  );
+
+  it('shares one throttling budget between visitors', async () => {
+    const tracker = (DemoThrottlerGuard.prototype as unknown as { getTracker(): Promise<string> }).getTracker();
+    await expect(tracker).resolves.toBe('demo');
   });
 });
 

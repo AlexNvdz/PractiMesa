@@ -2,6 +2,7 @@ import { BadRequestException, Body, Controller, HttpCode, Logger, Param, ParseUU
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { uuid } from '../common/validation';
 import { Prisma } from '../generated/prisma/client';
+import { InvoicingService } from '../invoicing/invoicing.service';
 import { lockOrder, settleOrder } from '../orders/settle';
 import { PrismaService } from '../prisma/prisma.service';
 import { FactusPayService, PayAccount } from './factus-pay.service';
@@ -22,6 +23,7 @@ export class FactusPayWebhookController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly pay: FactusPayService,
+    private readonly invoicing: InvoicingService,
   ) {}
 
   /** Shared account of the environment: only orders of businesses without their own account. */
@@ -74,6 +76,8 @@ export class FactusPayWebhookController {
         data: [{ provider: 'FACTUS_PAY', external_event_id: reference as string, payload: body as Prisma.InputJsonValue, processed: true, processed_at: new Date() }],
         skipDuplicates: true,
       });
+      // The invoice the customer asked for (if any) goes out right after the payment.
+      void this.invoicing.emit(reference as string);
     } else {
       this.logger.warn(`Factus Pay paid ${reference as string} but the order was not settled: ${result}`);
     }

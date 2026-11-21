@@ -1,6 +1,7 @@
-import { BadRequestException, Body, Controller, HttpCode, Injectable, Post, Req, Res, UseGuards } from '@nestjs/common';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { BadRequestException, Body, Controller, Get, HttpCode, Injectable, NotFoundException, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
+import { oneOf, parseBody } from '../common/validation';
 import { ACCESS_TTL_SECONDS, AuthService, REFRESH_TTL_MS, Tokens } from './auth.service';
 
 export const REFRESH_COOKIE = 'pm_refresh';
@@ -11,6 +12,23 @@ export class LoginThrottlerGuard extends ThrottlerGuard {
   protected async getTracker(req: Record<string, any>): Promise<string> {
     const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '';
     return email || req.ip;
+  }
+}
+
+/** Demo organizations (Q13), fixed in code so demo login can never open a real business. */
+export const DEMO_SLUGS = ['cafe-ejemplo', 'cadena-ejemplo'];
+const DEMO_LOGIN = { slug: oneOf(...DEMO_SLUGS), role: oneOf('OWNER', 'CASHIER', 'WAITER', 'KITCHEN') };
+
+/** Demo login exists only where DEMO_LOGIN=on (staging); elsewhere the routes answer 404. */
+function requireDemo() {
+  if (process.env.DEMO_LOGIN !== 'on') throw new NotFoundException();
+}
+
+// shortcut: one budget shared by every visitor (behind the web proxy they share one IP); per-client limits come with Cloudflare (Phase 5).
+@Injectable()
+export class DemoThrottlerGuard extends ThrottlerGuard {
+  protected async getTracker(): Promise<string> {
+    return 'demo';
   }
 }
 
@@ -46,6 +64,24 @@ export class AuthController {
   async login(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
     const { email, password } = parseLogin(body);
     return this.respond(res, await this.auth.login(email, password));
+  }
+
+  /** Demo organizations on this environment, for the "Entrar como demo" buttons. */
+  @Get('demo')
+  demoOrganizations() {
+    requireDemo();
+    return this.auth.demoOrganizations(DEMO_SLUGS);
+  }
+
+  /** Session as the demo user of a role, without a password. */
+  @Post('demo')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @UseGuards(DemoThrottlerGuard)
+  async demoLogin(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
+    requireDemo();
+    const { slug, role } = parseBody<{ slug: string; role: string }>(body, DEMO_LOGIN, ['slug', 'role']);
+    return this.respond(res, await this.auth.demoLogin(slug, role));
   }
 
   @Post('refresh')

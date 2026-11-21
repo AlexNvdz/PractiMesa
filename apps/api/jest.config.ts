@@ -5,6 +5,8 @@ const config: Config = {
   testEnvironment: 'node',
   // Integration specs read DATABASE_URL from apps/api/.env locally; CI sets it directly.
   setupFiles: ['dotenv/config'],
+  // Integration specs boot the whole app and their Postgres fixtures in beforeAll; on a busy machine that can pass the 5 s default.
+  testTimeout: 30_000,
   testRegex: '.*\\.(spec|test)\\.ts$',
   transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/../tsconfig.json' }] },
   collectCoverageFrom: [
