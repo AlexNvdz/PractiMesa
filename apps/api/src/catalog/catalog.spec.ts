@@ -236,4 +236,27 @@ describe('per-location prices, availability and stock', () => {
     const stock = (await loc1('GET', '/location-stock')).body;
     expect(stock).toEqual([expect.objectContaining({ ingredient_id: ingredientId, ingredients: { name: 'Harina', unit: 'gr' } })]);
   });
+
+  it('adds received goods on top of the current stock, creating the row when missing', async () => {
+    const loc2 = await client(app, orgA.users.CASHIER, orgA.locations[1]);
+    const first = await loc2('POST', `/location-stock/${ingredientId}/receive`, { qty: 1000 });
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ location_id: orgA.locations[1], current_qty: '1000' });
+    expect((await loc2('POST', `/location-stock/${ingredientId}/receive`, { qty: 250.5 })).body).toMatchObject({ current_qty: '1250.5' });
+
+    for (const qty of [0, -5, '10', undefined]) {
+      expect((await loc2('POST', `/location-stock/${ingredientId}/receive`, { qty })).status).toBe(400);
+    }
+    // Ingredient of another organization: the composite FK rejects it.
+    const other = (await ownerB('POST', '/ingredients', { name: 'Sal', unit: 'gr' })).body.id;
+    expect((await loc2('POST', `/location-stock/${other}/receive`, { qty: 1 })).status).toBe(400);
+  });
+
+  it('lets cashiers count stock but not manage ingredients', async () => {
+    const cashier = await client(app, orgA.users.CASHIER, orgA.locations[0]);
+    expect((await cashier('PUT', `/location-stock/${ingredientId}`, { current_qty: 10, min_alert_qty: 5 })).status).toBe(200);
+    expect((await cashier('POST', '/ingredients', { name: 'Azúcar', unit: 'gr' })).status).toBe(403);
+    expect((await cashier('PATCH', `/ingredients/${ingredientId}`, { name: 'x' })).status).toBe(403);
+    expect((await cashier('DELETE', `/ingredients/${ingredientId}`)).status).toBe(403);
+  });
 });

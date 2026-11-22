@@ -46,6 +46,13 @@ export interface Ingredient {
   unit: string;
 }
 
+/** Stock of one ingredient at the current location; a missing row means 0. */
+export interface LocationStock {
+  ingredient_id: string;
+  current_qty: string;
+  min_alert_qty: string;
+}
+
 export interface RecipeItem {
   ingredient_id: string;
   quantity_required: string;

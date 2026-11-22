@@ -7,6 +7,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 const ROLES = [
   ['OWNER', 'Dueña Demo', 'dueno'],
+  ['ADMIN', 'Admin Demo', 'admin'],
   ['CASHIER', 'Cajero Demo', 'cajero'],
   ['WAITER', 'Mesera Demo', 'mesero'],
   ['KITCHEN', 'Cocina Demo', 'cocina'],
@@ -37,7 +38,7 @@ async function main() {
   }
   await db.$disconnect();
 
-  console.log('Seed OK: Café Ejemplo (SINGLE) con usuarios dueno|cajero|mesero|cocina@cafe-ejemplo.demo');
+  console.log('Seed OK: Café Ejemplo (SINGLE) con usuarios dueno|admin|cajero|mesero|cocina@cafe-ejemplo.demo');
   if (!process.env.SEED_PASSWORD) console.log(`Contraseña generada (solo se muestra ahora): ${password}`);
 }
 
