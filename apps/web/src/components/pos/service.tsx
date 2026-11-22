@@ -15,6 +15,7 @@ import {
   type DiningTable,
   type Floor,
   isOpen,
+  liveItems,
   type LocationProduct,
   type MenuItem,
   type Order,
@@ -25,6 +26,18 @@ import {
 import { AccountPanel } from "./account-panel";
 import { ChargeForm } from "./charge-dialog";
 import { type DraftLine, linePrice, MenuPicker } from "./menu-picker";
+import { type VoidBody, VoidForm } from "./void-dialog";
+
+/** A void or cancel waiting for its reason (and authorization) in the dialog. */
+interface Voiding {
+  title: string;
+  body: string;
+  action: string;
+  run: (data: VoidBody) => Promise<void>;
+}
+const units = (n: number) => (n === 1 ? "1 producto" : `${n} productos`);
+/** Cashiers and waiters void and cancel only with a supervisor's or the owner's PIN (Q54). */
+const NEEDS_APPROVAL = new Set(["CASHIER", "WAITER"]);
 
 type Selection = { table: string } | { order: string } | { pickup: true } | null;
 
@@ -76,6 +89,7 @@ export function Service({ me }: { me: Me }) {
   const [mobilePanel, setMobilePanel] = useState(false);
   const [charging, setCharging] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [voiding, setVoiding] = useState<Voiding | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
@@ -195,26 +209,34 @@ export function Service({ me }: { me: Me }) {
       if (!table) setSelected({ order: saved.id });
     });
 
-  const voidItem = (item: OrderItem) =>
-    setConfirm({
-      title: `¿Anular ${item.quantity} × ${item.products.name}?`,
-      body: "Sale de la cuenta y el total baja en lo que sumaba.",
+  // The dialog shows the API's error (wrong PIN…) and stays open; it closes only when the void is done.
+  const voidItem = (item: OrderItem) => {
+    const orderId = account!.id;
+    setVoiding({
+      title: `Anular ${item.quantity} × ${item.products.name}`,
+      body: "Queda tachada en la cuenta, el total baja en lo que sumaba y cocina la ve anulada.",
       action: "Anular",
-      run: () => run(async () => put(await api<Order>(`/orders/${account!.id}/items/${item.id}`, "DELETE"))),
+      run: async (data) => {
+        put(await api<Order>(`/orders/${orderId}/items/${item.id}/void`, "POST", data));
+        setVoiding(null);
+      },
     });
+  };
 
-  const cancel = () =>
-    setConfirm({
-      title: `¿Anular la cuenta de ${table?.name ?? `pedido #${account!.order_number}`}?`,
+  const cancel = () => {
+    const orderId = account!.id;
+    setVoiding({
+      title: `Anular la cuenta de ${table?.name ?? `pedido #${account!.order_number}`}`,
       body: "Se cancela sin cobrar y no se descuenta inventario.",
       action: "Anular cuenta",
-      run: () =>
-        run(async () => {
-          put(await api<Order>(`/orders/${account!.id}/cancel`, "POST"));
-          setSelected(null);
-          setMobilePanel(false);
-        }),
+      run: async (data) => {
+        put(await api<Order>(`/orders/${orderId}/cancel`, "POST", data));
+        setVoiding(null);
+        setSelected(null);
+        setMobilePanel(false);
+      },
     });
+  };
 
   const setRound = (orderId: string, roundId: string, status: OrderRound["status"]) =>
     setOrders((all) => ({
@@ -320,6 +342,7 @@ export function Service({ me }: { me: Me }) {
             onDraft={setDraft}
             canOrder={canOrder}
             canCharge={canCharge}
+            canVoid={canOrder}
             composing={composing}
             busy={busy}
             error={error}
@@ -387,6 +410,19 @@ export function Service({ me }: { me: Me }) {
               </button>
             </div>
           </div>
+        )}
+      </Dialog>
+
+      <Dialog open={voiding !== null} onClose={() => setVoiding(null)} title={voiding?.title ?? ""}>
+        {voiding && (
+          <VoidForm
+            key={voiding.title}
+            body={voiding.body}
+            action={voiding.action}
+            needsApproval={NEEDS_APPROVAL.has(me.user.role)}
+            onSubmit={voiding.run}
+            onBack={() => setVoiding(null)}
+          />
         )}
       </Dialog>
 
@@ -467,7 +503,7 @@ function FloorMap({
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {group.tables.map((t) => {
               const order = tableOrder(t.id);
-              const items = order?.order_items.reduce((n, i) => n + i.quantity, 0) ?? 0;
+              const items = order ? liveItems(order.order_items).reduce((n, i) => n + i.quantity, 0) : 0;
               return (
                 <li key={t.id}>
                   <button
@@ -491,7 +527,7 @@ function FloorMap({
                         <>
                           <span className="figures block text-lg font-semibold tracking-[-0.01em]">{cop(order.total_cop)}</span>
                           <span className="figures block text-xs text-muted">
-                            {order.payment_status === "PENDING_QR" ? "QR pendiente" : `${items} productos`} · {elapsed(order.created_at, now)}
+                            {order.payment_status === "PENDING_QR" ? "QR pendiente" : units(items)} · {elapsed(order.created_at, now)}
                           </span>
                           {hasReady(order) && <span className="mt-1.5 block">{readyChip}</span>}
                         </>
@@ -527,7 +563,7 @@ function FloorMap({
                 >
                   <span className="figures text-[15px] font-semibold">#{o.order_number}</span>
                   <span className="figures flex-1 text-sm text-muted">
-                    {o.payment_status === "PENDING_QR" ? "QR pendiente" : `${o.order_items.reduce((n, i) => n + i.quantity, 0)} productos`} ·{" "}
+                    {o.payment_status === "PENDING_QR" ? "QR pendiente" : units(liveItems(o.order_items).reduce((n, i) => n + i.quantity, 0))} ·{" "}
                     {elapsed(o.created_at, now)}
                   </span>
                   {hasReady(o) && readyChip}

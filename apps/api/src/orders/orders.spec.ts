@@ -1,5 +1,6 @@
 // Integration test: real app over HTTP + Postgres with migrations applied.
 import type { INestApplication } from '@nestjs/common';
+import { hashPassword } from '../auth/password';
 import { PrismaService } from '../prisma/prisma.service';
 import { Call, client, createOrg, startApp, TestOrg } from '../testing/http';
 
@@ -11,6 +12,8 @@ let cashier1: Call; // location 1
 let waiter1: Call;
 let admin2: Call; // location 2
 let ownerB: Call;
+let super1: Call; // supervisor of location 1
+let supervisor1: string;
 let latte: string;
 let water: string;
 let coffee: string; // ingredient
@@ -21,6 +24,8 @@ const modifiers = [
   { name: 'Tamaño', required: true, multiple: false, options: [{ name: 'Grande', price_cop: 2000 }, { name: 'Pequeño', price_cop: 0 }] },
   { name: 'Extras', required: false, multiple: true, options: [{ name: 'Shot', price_cop: 1500 }, { name: 'Crema', price_cop: 1000 }] },
 ];
+/** Username + PIN of the supervisor of location 1, typed in the authorization dialog. */
+const approve = { username: 'super.uno', pin: '1234' };
 const bigLatte = { product_id: '', quantity: 2, modifiers: [{ group: 'Tamaño', option: 'Grande' }, { group: 'Extras', option: 'Shot' }] };
 
 beforeAll(async () => {
@@ -51,6 +56,14 @@ beforeAll(async () => {
   const waiter = await db.users.create({
     data: { ...org, email: `waiter-${orgA.id}@test.demo`, password_hash: 'x', full_name: 'Mesero', role: 'WAITER' },
   });
+  // Authorizers (Q56): a supervisor per location; the cashier has a PIN too but cannot authorize.
+  const pin = await hashPassword('1234');
+  supervisor1 = (
+    await db.users.create({ data: { ...org, full_name: 'Supervisora Uno', role: 'ADMIN', username: 'super.uno', pin_hash: pin, allowed_location_ids: [loc1] } })
+  ).id;
+  await db.users.create({ data: { ...org, full_name: 'Supervisor Dos', role: 'ADMIN', username: 'super.dos', pin_hash: pin, allowed_location_ids: [loc2] } });
+  await db.users.update({ where: { id: orgA.users.CASHIER }, data: { username: 'caja.uno', pin_hash: pin } });
+  super1 = await client(app, supervisor1, loc1);
   cashier1 = await client(app, orgA.users.CASHIER, loc1);
   waiter1 = await client(app, waiter.id, loc1);
   admin2 = await client(app, orgA.users.ADMIN, loc2);
@@ -196,7 +209,7 @@ describe('table accounts', () => {
 
     expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(409);
     expect((await waiter1('POST', `/orders/${orderId}/items`, { items: [{ product_id: water, quantity: 1 }] })).status).toBe(409);
-    expect((await cashier1('POST', `/orders/${orderId}/cancel`)).status).toBe(409);
+    expect((await super1('POST', `/orders/${orderId}/cancel`, { reason: 'MISTAKE' })).status).toBe(409);
     expect((await waiter1('GET', '/orders')).body.map((o: { id: string }) => o.id)).not.toContain(orderId);
 
     // Cash count of 2.5: opening 50000 + this cash sale 29000 + its tip 2634.
@@ -204,11 +217,17 @@ describe('table accounts', () => {
     expect(closed.body.expected_closing_cop).toBe('81634');
   });
 
-  it('cancels an unpaid account without touching stock and frees the table', async () => {
+  it('cancels an unpaid account with a reason, without touching stock, and frees the table', async () => {
     const { body } = await waiter1('POST', '/orders', { order_type: 'DINE_IN', table_id: table, items: [bigLatte] });
-    expect((await waiter1('POST', `/orders/${body.id}/cancel`)).status).toBe(403);
-    const cancelled = await cashier1('POST', `/orders/${body.id}/cancel`);
+    expect((await waiter1('POST', `/orders/${body.id}/cancel`, { reason: 'NOT_WANTED' })).status).toBe(403);
+    expect((await waiter1('POST', `/orders/${body.id}/cancel`, { authorization: approve })).status).toBe(400);
+    const cancelled = await waiter1('POST', `/orders/${body.id}/cancel`, { reason: 'NOT_WANTED', authorization: approve });
     expect(cancelled.body.status).toBe('CANCELLED');
+    await expect(db.orders.findUnique({ where: { id: body.id } })).resolves.toMatchObject({
+      cancel_reason: 'NOT_WANTED',
+      cancelled_by: expect.any(String),
+      cancel_authorized_by: supervisor1,
+    });
     await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'FREE' });
     const coffeeQty = (await db.location_stock.findUnique({
       where: { location_id_ingredient_id: { location_id: orgA.locations[0], ingredient_id: coffee } },
@@ -223,22 +242,53 @@ describe('table accounts', () => {
     expect(paid.body).toMatchObject({ payment_status: 'PAID', status: 'CONFIRMED', tip_cop: '1500', stock_alerts: [] });
   });
 
-  it('voids a line of an open account, only for cashiers and above', async () => {
+  it('voids a line with a reason and an authorization; the line stays, crossed out of totals', async () => {
     const { body } = await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [bigLatte, { product_id: water, quantity: 1 }] });
     const line = body.order_items.find((i: { product_id: string }) => i.product_id === water).id;
-    expect((await waiter1('DELETE', `/orders/${body.id}/items/${line}`)).status).toBe(403);
+    const url = `/orders/${body.id}/items/${line}/void`;
+    expect((await waiter1('POST', url, { reason: 'MISTAKE' })).status).toBe(403);
+    expect((await cashier1('POST', url, { reason: 'OTHER', authorization: approve })).status).toBe(400);
+    expect((await cashier1('POST', url, { reason: 'TIRED', authorization: approve })).status).toBe(400);
+    // Wrong PIN, a cashier and a supervisor of another location: the same answer, and the wrong PIN counts.
+    for (const authorization of [{ ...approve, pin: '9999' }, { username: 'caja.uno', pin: '1234' }, { username: 'super.dos', pin: '1234' }]) {
+      const denied = await cashier1('POST', url, { reason: 'MISTAKE', authorization });
+      expect(denied.status).toBe(403);
+      expect(denied.body.message).toBe('Usuario o PIN incorrecto');
+    }
+    await db.users.update({ where: { id: supervisor1 }, data: { pin_failed_count: 0 } });
 
-    const voided = await cashier1('DELETE', `/orders/${body.id}/items/${line}`);
-    expect(voided.status).toBe(200);
+    const voided = await cashier1('POST', url, { reason: 'OTHER', note: 'Se cayó', authorization: approve });
+    expect(voided.status).toBe(201);
     expect(voided.body).toMatchObject({ total_cop: '23000', tax_cop: '1703.7', subtotal_cop: '21296.3' });
-    expect(voided.body.order_items).toHaveLength(1);
-    expect((await cashier1('DELETE', `/orders/${body.id}/items/${line}`)).status).toBe(404);
+    expect(voided.body.order_items).toHaveLength(2);
+    expect(voided.body.order_items.find((i: { id: string }) => i.id === line)).toMatchObject({
+      void_reason: 'OTHER',
+      void_note: 'Se cayó',
+      voider: { full_name: 'CASHIER' },
+      void_authorizer: { full_name: 'Supervisora Uno' },
+    });
+    expect((await super1('POST', url, { reason: 'MISTAKE' })).status).toBe(409);
 
     const other = (await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: water, quantity: 1 }] })).body;
     const otherLine = other.order_items[0].id;
-    expect((await cashier1('DELETE', `/orders/${body.id}/items/${otherLine}`)).status).toBe(404);
+    expect((await super1('POST', `/orders/${body.id}/items/${otherLine}/void`, { reason: 'MISTAKE' })).status).toBe(404);
     await cashier1('POST', `/orders/${other.id}/pay`, { payment_method: 'CASH' });
-    expect((await cashier1('DELETE', `/orders/${other.id}/items/${otherLine}`)).status).toBe(409);
+    expect((await super1('POST', `/orders/${other.id}/items/${otherLine}/void`, { reason: 'MISTAKE' })).status).toBe(409);
+  });
+
+  it('a supervisor voids directly; a voided line is not deducted from stock when paid', async () => {
+    const stock = async () =>
+      (await db.location_stock.findUnique({ where: { location_id_ingredient_id: { location_id: orgA.locations[0], ingredient_id: coffee } } }))!.current_qty.toString();
+    const before = Number(await stock());
+    const { body } = await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: latte, quantity: 1, modifiers: [{ group: 'Tamaño', option: 'Pequeño' }] }] });
+    const round2 = (await waiter1('POST', `/orders/${body.id}/items`, { items: [{ product_id: latte, quantity: 3, modifiers: [{ group: 'Tamaño', option: 'Pequeño' }] }] })).body;
+    const extra = round2.order_items.find((i: { round: number }) => i.round === 2).id;
+    const voided = await super1('POST', `/orders/${body.id}/items/${extra}/void`, { reason: 'DELAY' });
+    expect(voided.status).toBe(201);
+    expect(await db.order_items.findUnique({ where: { id: extra } })).toMatchObject({ voided_by: supervisor1, void_authorized_by: supervisor1 });
+    await cashier1('POST', `/orders/${body.id}/pay`, { payment_method: 'CASH' });
+    // Only the 1 latte still on the account uses coffee (18 gr), not the 3 voided.
+    expect(Number(await stock())).toBe(before - 18);
   });
 
   it('hides orders of other locations and organizations', async () => {
@@ -246,7 +296,7 @@ describe('table accounts', () => {
     expect((await admin2('GET', `/orders/${body.id}`)).status).toBe(404);
     expect((await admin2('POST', `/orders/${body.id}/pay`, { payment_method: 'CASH' })).status).toBe(404);
     expect((await ownerB('GET', `/orders/${body.id}`)).status).toBe(404);
-    expect((await ownerB('POST', `/orders/${body.id}/cancel`)).status).toBe(404);
+    expect((await ownerB('POST', `/orders/${body.id}/cancel`, { reason: 'MISTAKE' })).status).toBe(404);
     expect((await ownerB('GET', '/orders')).body).toEqual([]);
   });
 });

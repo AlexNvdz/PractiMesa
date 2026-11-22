@@ -20,21 +20,21 @@ export class CategoriesController {
   }
 
   @Post()
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   create(@Req() req: Request, @Body() body: unknown) {
     const data = parseBody<Prisma.categoriesUncheckedCreateInput>(body, CATEGORY, ['name']);
     return this.prisma.forTenant(req.tenant!.organizationId).categories.create({ data });
   }
 
   @Patch(':id')
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   update(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const data = parseBody<Prisma.categoriesUncheckedUpdateInput>(body, CATEGORY);
     return this.prisma.forTenant(req.tenant!.organizationId).categories.update({ where: { id }, data });
   }
 
   @Delete(':id')
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   @HttpCode(204)
   async remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     await this.prisma.forTenant(req.tenant!.organizationId).categories.delete({ where: { id } });

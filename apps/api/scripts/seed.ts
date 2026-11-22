@@ -81,6 +81,7 @@ async function seedOrg(db: PrismaService, demo: DemoOrg, passwordHash: string, p
       (owner ? await db.users.findUnique({ where: { email: demo.ownerEmail } }) : null) ??
       (await db.users.findFirst({ where: { organization_id: org.id, role: user.role, username: null } }));
     const data = {
+      full_name: user.name,
       username: user.username,
       pin_hash: pinHash,
       email: owner ? demo.ownerEmail : null,
@@ -88,9 +89,31 @@ async function seedOrg(db: PrismaService, demo: DemoOrg, passwordHash: string, p
       allowed_location_ids: (user.at ?? []).map((i) => locationIds[i]),
     };
     if (existing) await db.users.update({ where: { id: existing.id }, data });
-    else await db.users.create({ data: { ...data, organization_id: org.id, full_name: user.name, role: user.role } });
+    else await db.users.create({ data: { ...data, organization_id: org.id, role: user.role } });
   }
+  await seedMenu(db, org.id, locationIds);
   console.log(`${demo.name} (@${demo.handle}, ${demo.locations.length} sede(s)). Dueño: ${demo.ownerEmail}. PIN 1234: ${demo.users.map((u) => u.username).join(', ')}`);
+}
+
+// shortcut: a tiny menu and 4 tables per location so a new demo business can be tried; 2.11 brings the full menus.
+async function seedMenu(db: PrismaService, organizationId: string, locationIds: string[]) {
+  const org = { organization_id: organizationId };
+  if (!(await db.products.count({ where: org }))) {
+    const drinks = await db.categories.create({ data: { ...org, name: 'Bebidas', sort_order: 0 } });
+    const food = await db.categories.create({ data: { ...org, name: 'Comidas', sort_order: 1 } });
+    await db.products.createMany({
+      data: [
+        { ...org, category_id: drinks.id, name: 'Café americano', base_price_cop: 4500, tax_rate: 8 },
+        { ...org, category_id: drinks.id, name: 'Limonada', base_price_cop: 7000, tax_rate: 8 },
+        { ...org, category_id: food.id, name: 'Arepa con queso', base_price_cop: 9000, tax_rate: 8 },
+        { ...org, category_id: food.id, name: 'Sándwich de pollo', base_price_cop: 16000, tax_rate: 8 },
+      ],
+    });
+  }
+  for (const location_id of locationIds) {
+    if (await db.dining_tables.count({ where: { location_id } })) continue;
+    await db.dining_tables.createMany({ data: [1, 2, 3, 4].map((n) => ({ ...org, location_id, number: n, name: `Mesa #${n}` })) });
+  }
 }
 
 async function main() {

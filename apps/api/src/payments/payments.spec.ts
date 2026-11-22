@@ -173,7 +173,8 @@ describe('QR payment with the shared account', () => {
     expect(fake.created.filter((c) => c.reference_code === orderId)).toHaveLength(1);
 
     expect((await cashierA('POST', `/orders/${orderId}/items`, { items: [{ product_id: water, quantity: 1 }] })).status).toBe(409);
-    expect((await cashierA('DELETE', `/orders/${orderId}/items/${body.order_items[0].id}`)).status).toBe(409);
+    const ownerA = await client(app, orgA.users.OWNER);
+    expect((await ownerA('POST', `/orders/${orderId}/items/${body.order_items[0].id}/void`, { reason: 'MISTAKE' })).status).toBe(409);
   });
 
   it('rejects webhooks without the right key or reference', async () => {

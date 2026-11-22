@@ -2,7 +2,14 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
 
 export const ORDER_INCLUDE = {
-  order_items: { orderBy: { round: 'asc' }, include: { products: { select: { name: true } } } },
+  order_items: {
+    orderBy: { round: 'asc' },
+    include: {
+      products: { select: { name: true } },
+      voider: { select: { full_name: true } },
+      void_authorizer: { select: { full_name: true } },
+    },
+  },
   order_rounds: { orderBy: { round: 'asc' }, select: { id: true, round: true, status: true } },
   dining_tables: { select: { name: true } },
 } satisfies Prisma.ordersInclude;
@@ -52,7 +59,7 @@ export async function settleOrder(
       INSERT INTO location_stock (location_id, ingredient_id, current_qty)
       SELECT ${locationId}::uuid, r.ingredient_id, -SUM(r.quantity_required * i.quantity)
         FROM order_items i JOIN product_recipes r ON r.product_id = i.product_id
-       WHERE i.order_id = ${id}::uuid
+       WHERE i.order_id = ${id}::uuid AND i.voided_at IS NULL
        GROUP BY r.ingredient_id
       ON CONFLICT (location_id, ingredient_id)
       DO UPDATE SET current_qty = location_stock.current_qty + EXCLUDED.current_qty

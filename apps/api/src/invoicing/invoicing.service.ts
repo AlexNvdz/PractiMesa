@@ -70,7 +70,7 @@ export class InvoicingService implements OnModuleInit, OnModuleDestroy {
     try {
       const order = await this.prisma.orders.findFirst({
         where: { id: orderId, factus_status: 'PENDING', payment_status: 'PAID' },
-        include: { order_items: { include: { products: { select: { name: true } } } } },
+        include: { order_items: { where: { voided_at: null }, include: { products: { select: { name: true } } } } },
       });
       if (order) await this.prisma.orders.update({ where: { id: orderId }, data: await this.send(order) });
     } catch (err) {

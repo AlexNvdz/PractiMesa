@@ -47,7 +47,7 @@ export class ProductsController {
   }
 
   @Post()
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   create(@Req() req: Request, @Body() body: unknown) {
     const tenant = req.tenant!;
     const { only_here, ...data } = parseBody<Prisma.productsUncheckedCreateInput & { only_here?: boolean }>(
@@ -61,7 +61,7 @@ export class ProductsController {
   }
 
   @Patch(':id')
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   update(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const data = parseBody<Prisma.productsUncheckedUpdateInput>(body, PRODUCT);
     return this.prisma.forTenant(req.tenant!.organizationId).products.update({ where: { id }, data });
@@ -69,7 +69,7 @@ export class ProductsController {
 
   /** Products already sold cannot be deleted (409): deactivate them with is_active = false. */
   @Delete(':id')
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   @HttpCode(204)
   async remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     await this.prisma.forTenant(req.tenant!.organizationId).products.delete({ where: { id } });
@@ -85,7 +85,7 @@ export class ProductsController {
 
   /** Replaces the whole recipe: body = [{ ingredient_id, quantity_required }]. */
   @Put(':id/recipe')
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   setRecipe(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     if (!Array.isArray(body) || body.length > 100) throw new BadRequestException('La receta debe ser una lista de ingredientes');
     const items = body.map((item) =>

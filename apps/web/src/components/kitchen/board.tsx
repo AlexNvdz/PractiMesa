@@ -210,18 +210,29 @@ function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; la
         </div>
       </header>
       <ul className="space-y-3 px-4 py-4">
-        {round.order_items.map((item) => (
-          <li key={item.id} className="flex items-start gap-3">
-            <span className="figures w-8 shrink-0 text-lg font-semibold">{item.quantity}×</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-lg leading-snug font-medium">{item.products.name}</p>
-              {item.selected_modifiers.length > 0 && (
-                <p className="text-[15px] text-ink-2">{item.selected_modifiers.map((m) => m.option).join(" · ")}</p>
-              )}
-              {item.notes && <p className="mt-1 rounded-control bg-warning-soft px-2 py-1 text-[15px] font-medium text-warning">{item.notes}</p>}
-            </div>
-          </li>
-        ))}
+        {round.order_items.map((item) =>
+          item.voided_at ? (
+            // Voided after it was sent (Q62): crossed out so nobody cooks it; the API lists these last.
+            <li key={item.id} className="flex items-start gap-3 text-muted">
+              <span className="figures w-8 shrink-0 text-lg font-semibold line-through">{item.quantity}×</span>
+              <p className="min-w-0 flex-1 text-lg leading-snug">
+                <span className="line-through">{item.products.name}</span>
+                <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 align-middle text-xs font-semibold text-danger">Anulada</span>
+              </p>
+            </li>
+          ) : (
+            <li key={item.id} className="flex items-start gap-3">
+              <span className="figures w-8 shrink-0 text-lg font-semibold">{item.quantity}×</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-lg leading-snug font-medium">{item.products.name}</p>
+                {item.selected_modifiers.length > 0 && (
+                  <p className="text-[15px] text-ink-2">{item.selected_modifiers.map((m) => m.option).join(" · ")}</p>
+                )}
+                {item.notes && <p className="mt-1 rounded-control bg-warning-soft px-2 py-1 text-[15px] font-medium text-warning">{item.notes}</p>}
+              </div>
+            </li>
+          ),
+        )}
       </ul>
       <div className="px-4 pb-4">
         <button

@@ -11,8 +11,9 @@ import type { Category, LocationProduct, Product } from "@/lib/pos";
 import { ProductForm } from "./product-form";
 
 /**
- * Catalog admin (OWNER/ADMIN): products grouped by category, with their price and availability at the
- * current location. Master data is organization-wide; price and availability are per location.
+ * Catalog: products grouped by category, with their price and availability at the current location. Master
+ * data is organization-wide; price and availability are per location. Only the owner edits it (Q53): a
+ * supervisor reads it and marks products sold out today at its location.
  */
 export function Catalog({ me }: { me: Me }) {
   const api = useApi();
@@ -23,6 +24,9 @@ export function Catalog({ me }: { me: Me }) {
   const [editing, setEditing] = useState<Product | "new" | null>(null);
   const [managing, setManaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const owner = me.user.role === "OWNER";
   const locationName = me.locations.find((l) => l.id === me.current_location_id)?.name ?? "esta sede";
   const multi = me.organization.plan_tier === "MULTI";
 
@@ -65,6 +69,19 @@ export function Catalog({ me }: { me: Me }) {
   ].filter((g) => g.items.length);
   const product = editing === "new" ? undefined : (editing ?? undefined);
 
+  const toggleSoldOut = async (p: Product) => {
+    const available = local[p.id]?.is_available !== false;
+    setToggling(p.id);
+    setRowError(null);
+    try {
+      const saved = await api<LocationProduct>(`/location-products/${p.id}`, "PUT", { is_available: !available });
+      setLocal((all) => ({ ...all, [p.id]: saved }));
+    } catch (err) {
+      setRowError({ id: p.id, message: errorMessage(err) });
+    }
+    setToggling(null);
+  };
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -73,19 +90,27 @@ export function Catalog({ me }: { me: Me }) {
           <Search size={18} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" aria-hidden />
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar producto" className={`${field} pl-10`} />
         </label>
-        <button type="button" onClick={() => setManaging(true)} className={`${button.secondary} ml-auto pl-3.5`}>
-          <Tags size={18} strokeWidth={2.25} aria-hidden />
-          Categorías
-        </button>
-        <button type="button" onClick={() => setEditing("new")} className={`${button.primary} pl-3.5`}>
-          <Plus size={18} strokeWidth={2.25} aria-hidden />
-          Nuevo producto
-        </button>
+        {owner ? (
+          <>
+            <button type="button" onClick={() => setManaging(true)} className={`${button.secondary} ml-auto pl-3.5`}>
+              <Tags size={18} strokeWidth={2.25} aria-hidden />
+              Categorías
+            </button>
+            <button type="button" onClick={() => setEditing("new")} className={`${button.primary} pl-3.5`}>
+              <Plus size={18} strokeWidth={2.25} aria-hidden />
+              Nuevo producto
+            </button>
+          </>
+        ) : (
+          <p className="ml-auto max-w-sm text-sm text-muted text-pretty">
+            Solo el dueño cambia productos y precios. Tú marcas lo que se agotó hoy en {locationName}.
+          </p>
+        )}
       </div>
 
       {!visible.length && (
         <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
-          Todavía no hay productos. Crea el primero con &ldquo;Nuevo producto&rdquo;.
+          {owner ? <>Todavía no hay productos. Crea el primero con &ldquo;Nuevo producto&rdquo;.</> : "Todavía no hay productos."}
         </p>
       )}
       {visible.length > 0 && !groups.length && <p className="py-10 text-center text-[15px] text-muted">Ningún producto coincide con &ldquo;{query}&rdquo;.</p>}
@@ -100,13 +125,10 @@ export function Catalog({ me }: { me: Me }) {
             {g.items.map((p) => {
               const override = local[p.id];
               const price = override?.custom_price_cop ?? p.base_price_cop;
-              return (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => setEditing(p)}
-                    className="flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground"
-                  >
+              const sellable = p.is_active && override?.is_listed !== false;
+              const soldOut = override?.is_available === false;
+              const content = (
+                <>
                     <span className="min-w-0 flex-1">
                       <span className="block text-[15px] font-medium">{p.name}</span>
                       {p.modifiers_schema.length > 0 && (
@@ -120,14 +142,48 @@ export function Catalog({ me }: { me: Me }) {
                       <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">No se vende aquí</span>
                     ) : (
                       override?.is_available === false && (
-                        <span className="rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning">No disponible aquí</span>
+                        <span className="rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning">Agotado hoy</span>
                       )
                     )}
                     <span className="text-right">
                       <span className="figures block text-[15px] font-medium">{cop(price)}</span>
                       {override?.custom_price_cop != null && <span className="figures block text-xs text-muted">Base {cop(p.base_price_cop)}</span>}
                     </span>
-                  </button>
+                </>
+              );
+              return (
+                <li key={p.id}>
+                  {owner ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditing(p)}
+                      className="flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground"
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div className="px-5 py-3">
+                      <div className="flex min-h-11 flex-wrap items-center gap-x-4 gap-y-2">
+                        {content}
+                        {sellable && (
+                          <button
+                            type="button"
+                            disabled={toggling === p.id}
+                            onClick={() => void toggleSoldOut(p)}
+                            aria-pressed={soldOut}
+                            className={`${button.secondary} -mr-1 min-w-36`}
+                          >
+                            {soldOut ? "Marcar disponible" : "Marcar agotado"}
+                          </button>
+                        )}
+                      </div>
+                      {rowError?.id === p.id && (
+                        <p role="alert" className="mt-1 text-sm text-danger">
+                          {rowError.message}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </li>
               );
             })}

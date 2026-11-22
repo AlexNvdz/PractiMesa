@@ -173,7 +173,7 @@ describe('requesting an invoice', () => {
     expect((await invoice(cashierA, id)).status).toBe(409);
 
     const { body: cancelled } = await cashierA('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: product, quantity: 1 }] });
-    await cashierA('POST', `/orders/${cancelled.id}/cancel`);
+    await (await client(app, orgA.users.OWNER))('POST', `/orders/${cancelled.id}/cancel`, { reason: 'MISTAKE' });
     expect((await invoice(cashierA, cancelled.id)).status).toBe(409);
     expect((await invoice(cashierB, id)).status).toBe(404);
     expect((await invoice(waiterA, id)).status).toBe(403);

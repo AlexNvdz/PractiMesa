@@ -3,7 +3,7 @@
 import { ArrowLeft, Check, LoaderCircle, X } from "lucide-react";
 import { button } from "@/components/ui";
 import { cop } from "@/lib/format";
-import type { Order, OrderItem, OrderRound } from "@/lib/pos";
+import { liveItems, type Order, type OrderItem, type OrderRound, VOID_REASONS } from "@/lib/pos";
 import { type DraftLine, linePrice, Stepper } from "./menu-picker";
 
 const modifiersOf = (picks: { option: string }[]) => picks.map((p) => p.option).join(" · ");
@@ -25,6 +25,7 @@ export function AccountPanel({
   onDraft,
   canOrder,
   canCharge,
+  canVoid,
   composing,
   busy,
   error,
@@ -44,6 +45,8 @@ export function AccountPanel({
   onDraft: (lines: DraftLine[]) => void;
   canOrder: boolean;
   canCharge: boolean;
+  /** Void lines and cancel the account (cashiers and waiters with a supervisor's PIN). */
+  canVoid: boolean;
   composing: boolean;
   busy: boolean;
   error: string | null;
@@ -92,15 +95,28 @@ export function AccountPanel({
             <RoundHeading round={round} kitchen={kitchenState(round)} canDeliver={canOrder} busy={busy} onDeliver={onDeliver} />
             <ul className="space-y-3">
               {items.map((item) => (
-                <li key={item.id} className="flex items-start gap-3">
-                  <span className="figures w-7 shrink-0 pt-px text-[15px] font-medium text-ink-2">{item.quantity}×</span>
+                <li key={item.id} className={`flex items-start gap-3 ${item.voided_at ? "text-muted" : ""}`}>
+                  <span className={`figures w-7 shrink-0 pt-px text-[15px] font-medium ${item.voided_at ? "line-through" : "text-ink-2"}`}>
+                    {item.quantity}×
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[15px] leading-snug">{item.products.name}</p>
-                    {item.selected_modifiers.length > 0 && <p className="text-sm text-muted">{modifiersOf(item.selected_modifiers)}</p>}
-                    {item.notes && <p className="text-sm text-muted">Nota: {item.notes}</p>}
+                    <p className={`text-[15px] leading-snug ${item.voided_at ? "line-through" : ""}`}>{item.products.name}</p>
+                    {item.voided_at ? (
+                      <p className="text-sm">
+                        Anulada · {item.void_reason === "OTHER" ? item.void_note : item.void_reason && VOID_REASONS[item.void_reason]}
+                        {item.void_authorizer && ` · autorizó ${item.void_authorizer.full_name}`}
+                      </p>
+                    ) : (
+                      <>
+                        {item.selected_modifiers.length > 0 && <p className="text-sm text-muted">{modifiersOf(item.selected_modifiers)}</p>}
+                        {item.notes && <p className="text-sm text-muted">Nota: {item.notes}</p>}
+                      </>
+                    )}
                   </div>
-                  <span className="figures pt-px text-[15px]">{cop(Number(item.unit_price_cop) * item.quantity)}</span>
-                  {canCharge && !pendingQr && (
+                  <span className={`figures pt-px text-[15px] ${item.voided_at ? "line-through" : ""}`}>
+                    {cop(Number(item.unit_price_cop) * item.quantity)}
+                  </span>
+                  {canVoid && !pendingQr && !item.voided_at && (
                     <button
                       type="button"
                       onClick={() => onVoid(item)}
@@ -181,7 +197,7 @@ export function AccountPanel({
                 Agregar productos
               </button>
             )}
-            {canCharge && order && order.order_items.length > 0 && (
+            {canCharge && order && liveItems(order.order_items).length > 0 && (
               <button type="button" onClick={onCharge} className={`${button.primary} flex-1`}>
                 {pendingQr ? "Ver QR de pago" : `Cobrar ${cop(order.total_cop)}`}
               </button>
@@ -189,10 +205,10 @@ export function AccountPanel({
           </div>
         )}
 
-        {(extra || (canCharge && order && !draft.length)) && (
+        {(extra || (canVoid && order && !draft.length)) && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             {extra}
-            {canCharge && order && !draft.length && (
+            {canVoid && order && !draft.length && (
               <button type="button" onClick={onCancel} className={`${button.quietDanger} ml-auto`}>
                 Anular cuenta
               </button>

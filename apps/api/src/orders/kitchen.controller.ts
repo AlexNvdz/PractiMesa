@@ -19,7 +19,11 @@ const SERVERS = new Set(['CASHIER', 'WAITER']);
 
 const ROUND_INCLUDE = {
   orders: { select: { order_number: true, order_type: true, status: true, dining_tables: { select: { name: true } } } },
-  order_items: { select: { id: true, quantity: true, selected_modifiers: true, notes: true, products: { select: { name: true } } } },
+  // Voided lines stay on the ticket, crossed out, so the kitchen stops preparing them.
+  order_items: {
+    orderBy: { voided_at: { sort: 'asc', nulls: 'first' } },
+    select: { id: true, quantity: true, selected_modifiers: true, notes: true, voided_at: true, products: { select: { name: true } } },
+  },
 } satisfies Prisma.order_roundsInclude;
 
 /**
@@ -38,7 +42,7 @@ export class KitchenController {
     return this.prisma.forTenant(tenant.organizationId).order_rounds.findMany({
       where: {
         status: { in: ['PENDING', 'PREPARING', 'READY'] },
-        order_items: { some: {} },
+        order_items: { some: { voided_at: null } },
         orders: { location_id: requireLocation(tenant), status: { not: 'CANCELLED' } },
       },
       orderBy: { created_at: 'asc' },
