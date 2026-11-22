@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Plus, Search, Tags, Trash2 } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Plus, Search, Tags, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { button, field } from "@/components/ui";
@@ -155,13 +155,14 @@ export function Catalog({ me }: { me: Me }) {
   );
 }
 
-/** Add, rename and delete categories. Deleting one leaves its products without category. */
+/** Add, rename, reorder and delete categories. Deleting one leaves its products without category. */
 function Categories({ categories, onChange }: { categories: Category[]; onChange: (categories: Category[]) => void }) {
   const api = useApi();
   const [names, setNames] = useState<Record<string, string>>(() => Object.fromEntries(categories.map((c) => [c.id, c.name])));
   const [fresh, setFresh] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [moved, setMoved] = useState("");
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -187,20 +188,51 @@ function Categories({ categories, onChange }: { categories: Category[]; onChange
     });
   };
 
+  // Moves one step and saves the new positions (0..n-1) of the categories whose position changed.
+  // The list updates at once; if a save fails, it reloads the order the server kept.
+  const move = (index: number, step: -1 | 1) => {
+    const to = index + step;
+    if (busy || to < 0 || to >= categories.length) return;
+    const next = [...categories];
+    [next[index], next[to]] = [next[to], next[index]];
+    onChange(next.map((c, i) => ({ ...c, sort_order: i })));
+    setMoved(`${next[to].name}: posición ${to + 1} de ${next.length}`);
+    void run(async () => {
+      try {
+        await Promise.all(next.map((c, i) => (c.sort_order === i ? null : api(`/categories/${c.id}`, "PATCH", { sort_order: i }))));
+      } catch (err) {
+        onChange(await api<Category[]>("/categories"));
+        throw err;
+      }
+    });
+  };
+  const arrow =
+    "flex size-11 shrink-0 items-center justify-center rounded-control text-ink-2 transition-[background-color,color] duration-150 hover:not-aria-disabled:bg-ground hover:not-aria-disabled:text-ink aria-disabled:cursor-not-allowed aria-disabled:opacity-40";
+
   return (
     <div>
-      <p className="text-sm text-muted">Al eliminar una categoría, sus productos quedan sin categoría.</p>
+      <p className="text-sm text-muted">El orden de aquí es el del menú en el POS y la tienda. Al eliminar una categoría, sus productos quedan sin categoría.</p>
+      <p aria-live="polite" className="sr-only">
+        {moved}
+      </p>
       <ul className="mt-4 space-y-2">
-        {categories.map((c) => {
+        {categories.map((c, i) => {
           const changed = names[c.id]?.trim() && names[c.id].trim() !== c.name;
           return (
-            <li key={c.id} className="flex items-center gap-2">
+            <li key={c.id} className="flex items-center gap-1">
+              {/* aria-disabled, not disabled: the focused arrow keeps focus when it reaches the end. */}
+              <button type="button" onClick={() => move(i, -1)} aria-disabled={i === 0 || busy} aria-label={`Subir ${c.name}`} className={arrow}>
+                <ChevronUp size={18} aria-hidden />
+              </button>
+              <button type="button" onClick={() => move(i, 1)} aria-disabled={i === categories.length - 1 || busy} aria-label={`Bajar ${c.name}`} className={arrow}>
+                <ChevronDown size={18} aria-hidden />
+              </button>
               <input
                 value={names[c.id] ?? ""}
                 onChange={(e) => setNames((all) => ({ ...all, [c.id]: e.target.value }))}
                 maxLength={100}
                 aria-label={`Nombre de la categoría ${c.name}`}
-                className={`${field} flex-1`}
+                className={`${field} ml-1 flex-1`}
               />
               {changed ? (
                 <button
