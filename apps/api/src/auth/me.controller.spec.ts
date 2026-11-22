@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
+import type { AuthService } from './auth.service';
 import { MeController } from './me.controller';
 
 const db = new PrismaService();
@@ -32,8 +33,8 @@ it('returns the session user, organization and allowed locations', async () => {
     tenant: { userId, organizationId: orgId, role: 'CASHIER', planTier: 'SINGLE', maxLocations: 1, locationId, locationIds: [locationId] },
   } as unknown as Request;
 
-  await expect(new MeController(db).me(req)).resolves.toEqual({
-    user: { id: userId, full_name: 'Ana', email: `me-${suffix}@test.demo`, role: 'CASHIER' },
+  await expect(new MeController(db, {} as AuthService).me(req)).resolves.toEqual({
+    user: { id: userId, full_name: 'Ana', given_names: null, family_names: null, email: `me-${suffix}@test.demo`, role: 'CASHIER', username: null, has_pin: false },
     organization: { id: orgId, name: 'Me test', handle: `me_${suffix}`, plan_tier: 'SINGLE', max_locations: 1 },
     locations: [{ id: locationId, name: 'Centro', city: 'Cali' }],
     current_location_id: locationId,

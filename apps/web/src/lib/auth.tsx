@@ -6,11 +6,20 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 export type Role = "OWNER" | "ADMIN" | "CASHIER" | "WAITER" | "KITCHEN";
 
 export interface Me {
-  user: { id: string; full_name: string; email: string | null; role: Role };
+  user: {
+    id: string;
+    full_name: string;
+    given_names: string | null;
+    family_names: string | null;
+    email: string | null;
+    role: Role;
+    username: string | null;
+    has_pin: boolean;
+  };
   organization: { id: string; name: string; handle: string; plan_tier: "SINGLE" | "MULTI"; max_locations: number };
   locations: { id: string; name: string; city: string }[];
   current_location_id: string | null;
-  /** Authorized device of a PIN session (Q33); null when signed in with email. */
+  /** Linked device of a PIN session (Q33); null when signed in with email. */
   device: { id: string; name: string } | null;
 }
 
@@ -19,10 +28,10 @@ type Status = "loading" | "anonymous" | "authenticated";
 interface AuthContextValue {
   status: Status;
   me: Me | null;
-  /** Owner/admin login; `handle` = the business typed in step 1 (Q32). */
+  /** Owner login; `handle` = the business typed in step 1. */
   login(email: string, password: string, handle?: string): Promise<void>;
-  /** Username + PIN on an authorized device (Q32). */
-  pinLogin(role: Role, username: string, pin: string): Promise<void>;
+  /** Username + PIN on a linked device; the role comes from the user. */
+  pinLogin(username: string, pin: string): Promise<void>;
   /** "Entrar como demo": session as the example organization's user of that role. */
   demoLogin(handle: string, role: Role): Promise<void>;
   /** Sign-up with a platform invitation (Q28); ends logged in as the new owner. */
@@ -159,7 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (email: string, password: string, handle?: string) => start("/api/auth/login", { email, password, handle }),
     [start],
   );
-  const pinLogin = useCallback((role: Role, username: string, pin: string) => start("/api/auth/pin", { role, username, pin }), [start]);
+  const pinLogin = useCallback((username: string, pin: string) => start("/api/auth/pin", { username, pin }), [start]);
   const demoLogin = useCallback((handle: string, role: Role) => start("/api/auth/demo", { handle, role }), [start]);
   const register = useCallback((token: string, data: object) => start(`/api/auth/register/${encodeURIComponent(token)}`, data), [start]);
 
@@ -222,7 +231,7 @@ export function useRequiredMe(): Me | null {
 
 export const ROLE_LABEL: Record<Role, string> = {
   OWNER: "Dueño",
-  ADMIN: "Administrador",
+  ADMIN: "Supervisor",
   CASHIER: "Cajero",
   WAITER: "Mesero",
   KITCHEN: "Cocina",

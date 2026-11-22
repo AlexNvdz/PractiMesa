@@ -5,7 +5,7 @@ import { email, nullable, oneOf, parseBody, text } from '../common/validation';
 import { ACCESS_TTL_SECONDS, AuthService, DEMO_HANDLES, REFRESH_TTL_MS, Registration, Tokens } from './auth.service';
 
 export const REFRESH_COOKIE = 'pm_refresh';
-/** Authorized device token (Q29). Path /api so /api/devices can tell and replace this browser's device. */
+/** Linked device token (Q29). Path /api so /api/devices can tell which device is this browser. */
 export const DEVICE_COOKIE = 'pm_device';
 const DEVICE_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
@@ -37,8 +37,19 @@ export class PinThrottlerGuard extends ThrottlerGuard {
   }
 }
 
+/** Link codes are throttled per business: guessing one needs ~10^11 tries, this allows 10 a minute. */
+@Injectable()
+export class LinkThrottlerGuard extends ThrottlerGuard {
+  protected async getTracker(req: Record<string, any>): Promise<string> {
+    const handle = typeof req.body?.handle === 'string' ? req.body.handle.toLowerCase() : '';
+    return `link:${handle}`;
+  }
+}
+
+const HANDLE = (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9_]{3,30}$/.test(v);
+const LINK = { handle: HANDLE, code: text(20) };
+
 const PIN_LOGIN = {
-  role: oneOf('OWNER', 'ADMIN', 'CASHIER', 'WAITER', 'KITCHEN'),
   username: (v: unknown) => typeof v === 'string' && /^[a-z0-9.]{3,30}$/.test(v),
   pin: (v: unknown) => typeof v === 'string' && /^\d{4,6}$/.test(v),
 };
@@ -77,7 +88,7 @@ export function parseLogin(body: unknown): { email: string; password: string; ha
 }
 
 const REGISTRATION = {
-  handle: (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9_]{3,30}$/.test(v),
+  handle: HANDLE,
   business_name: text(150),
   nit: nullable(text(30)),
   owner_name: text(120),
@@ -126,13 +137,24 @@ export class AuthController {
     return this.auth.business(handle, readCookie(req, DEVICE_COOKIE));
   }
 
-  /** Username + PIN on an authorized device (Q32). */
+  /** Links this browser with the owner's one-time code; sets the device cookie. */
+  @Post('device')
+  @HttpCode(200)
+  @UseGuards(LinkThrottlerGuard)
+  async link(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const { handle, code } = parseBody<{ handle: string; code: string }>(body, LINK, ['handle', 'code']);
+    const { token, device } = await this.auth.linkDevice(handle, code, readCookie(req, DEVICE_COOKIE));
+    res.cookie(DEVICE_COOKIE, token, deviceCookieOptions());
+    return device;
+  }
+
+  /** Username + PIN on a linked device; the role comes from the user. */
   @Post('pin')
   @HttpCode(200)
   @UseGuards(PinThrottlerGuard)
   async pin(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const { role, username, pin } = parseBody<{ role: string; username: string; pin: string }>(body, PIN_LOGIN, ['role', 'username', 'pin']);
-    return this.respond(res, await this.auth.pinLogin(readCookie(req, DEVICE_COOKIE), role, username, pin));
+    const { username, pin } = parseBody<{ username: string; pin: string }>(body, PIN_LOGIN, ['username', 'pin']);
+    return this.respond(res, await this.auth.pinLogin(readCookie(req, DEVICE_COOKIE), username, pin));
   }
 
   /** Demo organizations on this environment, for the "Entrar como demo" buttons. */

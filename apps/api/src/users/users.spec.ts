@@ -1,7 +1,7 @@
 // Integration test: real app over HTTP + Postgres with migrations applied.
 import type { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { verifyPassword } from '../auth/password';
+import { hashPassword, verifyPassword } from '../auth/password';
 import { PrismaService } from '../prisma/prisma.service';
 import { client, createOrg, startApp, TestOrg } from '../testing/http';
 
@@ -20,8 +20,6 @@ beforeAll(async () => {
   app = await startApp();
   multi = await createOrg(db, 'MULTI', 2);
   single = await createOrg(db, 'SINGLE', 1);
-  // The admin works only in the first location.
-  await db.users.update({ where: { id: multi.users.ADMIN }, data: { allowed_location_ids: [multi.locations[0]] } });
 });
 
 afterAll(async () => {
@@ -56,14 +54,16 @@ describe('team (owner)', () => {
     expect(list.body.every((u: object) => !('pin_hash' in u) && !('password_hash' in u))).toBe(true);
   });
 
-  it('validates workers: PIN required, no email, username format and uniqueness', async () => {
+  it('validates: PIN required, username format and uniqueness; email is never stored', async () => {
     const owner = await client(app, multi.users.OWNER);
     expect((await owner('POST', '/users', worker({ pin: undefined }))).status).toBe(400);
-    expect((await owner('POST', '/users', worker({ email: 'x@test.demo' }))).status).toBe(400);
     for (const bad of [{ username: 'Alex' }, { username: 'al' }, { username: 'alex-n' }, { pin: '12a4' }, { pin: '123' }, { role: 'OWNER' }]) {
       expect((await owner('POST', '/users', worker(bad))).status).toBe(400);
     }
     expect((await owner('POST', '/users', worker({ location_ids: [randomUUID()] }))).status).toBe(400);
+    const withEmail = await owner('POST', '/users', worker({ email: 'x@test.demo', password: 'clave-larga' }));
+    expect(withEmail.status).toBe(201);
+    expect(withEmail.body.email).toBeNull();
     const first = worker();
     expect((await owner('POST', '/users', first)).status).toBe(201);
     const dup = await owner('POST', '/users', worker({ username: first.username }));
@@ -71,35 +71,18 @@ describe('team (owner)', () => {
     expect(dup.body.message).toContain('usuario ya existe');
   });
 
-  it('creates an admin with email and password, who can then log in', async () => {
+  it('creates a supervisor with username + PIN, like everyone but the owner', async () => {
     const owner = await client(app, multi.users.OWNER);
-    const email = `admin-${randomUUID().slice(0, 8)}@test.demo`;
     expect((await owner('POST', '/users', worker({ role: 'ADMIN', pin: undefined }))).status).toBe(400);
-    const taken = await owner('POST', '/users', worker({ role: 'ADMIN', email: (await db.users.findUniqueOrThrow({ where: { id: multi.users.OWNER } })).email, password: 'clave-larga' }));
-    expect(taken.status).toBe(409);
-    expect(taken.body.message).toContain('correo');
-
-    const res = await owner('POST', '/users', worker({ role: 'ADMIN', email: email.toUpperCase(), password: ' clave larga ', pin: undefined, location_ids: [multi.locations[0]] }));
+    const res = await owner('POST', '/users', worker({ role: 'ADMIN', location_ids: [multi.locations[0]] }));
     expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ role: 'ADMIN', email, has_pin: false });
-    const base = await app.getUrl();
-    const login = await fetch(`${base}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, password: ' clave larga ' }),
-    });
-    expect(login.status).toBe(200);
+    expect(res.body).toMatchObject({ role: 'ADMIN', email: null, has_pin: true });
   });
 
-  it('changes role, locations and state; a worker becomes admin only with email and password', async () => {
+  it('changes role, locations and state', async () => {
     const owner = await client(app, multi.users.OWNER);
     const { body: created } = await owner('POST', '/users', worker());
-    expect((await owner('PATCH', `/users/${created.id}`, { role: 'ADMIN' })).status).toBe(400);
-    const promoted = await owner('PATCH', `/users/${created.id}`, {
-      role: 'ADMIN',
-      email: `promo-${randomUUID().slice(0, 8)}@test.demo`,
-      password: 'otra-clave-larga',
-    });
+    const promoted = await owner('PATCH', `/users/${created.id}`, { role: 'ADMIN' });
     expect(promoted.status).toBe(200);
     expect(promoted.body.role).toBe('ADMIN');
 
@@ -120,69 +103,27 @@ describe('team (owner)', () => {
     expect((await asWorker('GET', '/me')).status).toBe(200);
   });
 
-  it('owners edit their own names, username and PIN but not their role or state', async () => {
+  it('the owner is not on the team: its data changes only in Mi cuenta', async () => {
     const owner = await client(app, multi.users.OWNER);
-    for (const body of [{ role: 'ADMIN' }, { is_active: false }, { location_ids: [multi.locations[0]] }]) {
-      expect((await owner('PATCH', `/users/${multi.users.OWNER}`, body)).status).toBe(403);
+    const listed = (await owner('GET', '/users')).body as { id: string; role: string }[];
+    expect(listed.some((u) => u.role === 'OWNER')).toBe(false);
+    expect(listed.map((u) => u.id)).toContain(multi.users.ADMIN);
+    for (const body of [{ given_names: 'Otra' }, { role: 'ADMIN' }, { is_active: false }]) {
+      const res = await owner('PATCH', `/users/${multi.users.OWNER}`, body);
+      expect(res.status).toBe(403);
+      expect(res.body.message).toContain('Mi cuenta');
     }
-    await expect(owner('PATCH', `/users/${multi.users.OWNER}`, { given_names: 'Dueña', family_names: 'Prueba', username: 'duena.prueba' })).resolves.toMatchObject({
-      status: 200,
-      body: { full_name: 'Dueña Prueba', username: 'duena.prueba', role: 'OWNER' },
-    });
-    expect((await owner('PUT', `/users/${multi.users.OWNER}/pin`, { pin: '987654' })).status).toBe(204);
-    expect((await owner('PUT', `/users/${multi.users.OWNER}/pin`, { pin: '98' })).status).toBe(400);
-  });
-});
-
-describe('team (admin, Q42)', () => {
-  it('creates workers only in its own locations and never admins', async () => {
-    const admin = await client(app, multi.users.ADMIN);
-    expect((await admin('POST', '/users', worker({ location_ids: [multi.locations[1]] }))).status).toBe(400);
-    const none = await admin('POST', '/users', worker());
-    expect(none.status).toBe(400);
-    expect(none.body.message).toContain('al menos una sede');
-    expect((await admin('POST', '/users', worker({ role: 'ADMIN', email: 'a@test.demo', password: 'clave-larga', location_ids: [multi.locations[0]] }))).status).toBe(403);
-    expect((await admin('POST', '/users', worker({ location_ids: [multi.locations[0]] }))).status).toBe(201);
-  });
-
-  it('manages only workers of its locations, and cannot touch the owner, admins or accesses', async () => {
-    const owner = await client(app, multi.users.OWNER);
-    const admin = await client(app, multi.users.ADMIN);
-    const { body: mine } = await admin('POST', '/users', worker({ location_ids: [multi.locations[0]] }));
-    const { body: elsewhere } = await owner('POST', '/users', worker({ location_ids: [multi.locations[1]] }));
-    const { body: everywhere } = await owner('POST', '/users', worker());
-
-    expect((await admin('PATCH', `/users/${mine.id}`, { role: 'KITCHEN', is_active: false })).status).toBe(200);
-    expect((await admin('PUT', `/users/${mine.id}/pin`, { pin: '4321' })).status).toBe(204);
-    expect((await admin('PATCH', `/users/${mine.id}`, { role: 'ADMIN' })).status).toBe(403);
-    expect((await admin('PATCH', `/users/${mine.id}`, { location_ids: [multi.locations[1]] })).status).toBe(400);
-    for (const id of [elsewhere.id, everywhere.id, multi.users.OWNER]) {
-      expect((await admin('PATCH', `/users/${id}`, { given_names: 'Otro' })).status).toBe(403);
-      expect((await admin('PUT', `/users/${id}/pin`, { pin: '1111' })).status).toBe(403);
-    }
-    const listed = (await admin('GET', '/users')).body as { id: string; can_manage: boolean }[];
-    const can = (id: string) => listed.find((u) => u.id === id)?.can_manage;
-    expect([can(mine.id), can(multi.users.ADMIN), can(elsewhere.id), can(everywhere.id), can(multi.users.OWNER)]).toEqual([true, true, false, false, false]);
-    // Its own PIN and names, yes; its own email or locations, no.
-    expect((await admin('PUT', `/users/${multi.users.ADMIN}/pin`, { pin: '2468' })).status).toBe(204);
-    expect((await admin('PATCH', `/users/${multi.users.ADMIN}`, { email: 'nuevo@test.demo' })).status).toBe(403);
-    expect((await admin('PATCH', `/users/${multi.users.ADMIN}`, { location_ids: [multi.locations[1]] })).status).toBe(403);
+    expect((await owner('PUT', `/users/${multi.users.OWNER}/pin`, { pin: '987654' })).status).toBe(403);
   });
 });
 
 describe('team access', () => {
-  it('an admin of every location manages workers of every location', async () => {
-    const owner = await client(app, multi.users.OWNER);
-    const { body: everywhere } = await owner('POST', '/users', worker());
-    const { body: allAdmin } = await owner('POST', '/users', worker({ role: 'ADMIN', email: `all-${randomUUID().slice(0, 8)}@test.demo`, password: 'clave-larga', pin: undefined }));
-    const admin = await client(app, allAdmin.id);
-    expect((await admin('GET', '/users')).body.find((u: { id: string }) => u.id === everywhere.id).can_manage).toBe(true);
-    expect((await admin('PUT', `/users/${everywhere.id}/pin`, { pin: '5555' })).status).toBe(204);
-  });
-
-  it('is closed to workers and to other businesses', async () => {
-    const cashier = await client(app, multi.users.CASHIER);
-    expect((await cashier('GET', '/users')).status).toBe(403);
+  it('is only for the owner: closed to supervisors, workers and other businesses', async () => {
+    for (const id of [multi.users.ADMIN, multi.users.CASHIER]) {
+      const user = await client(app, id);
+      expect((await user('GET', '/users')).status).toBe(403);
+      expect((await user('PUT', `/users/${multi.users.CASHIER}/pin`, { pin: '1111' })).status).toBe(403);
+    }
     const other = await client(app, single.users.OWNER);
     expect((await other('PATCH', `/users/${multi.users.CASHIER}`, { given_names: 'X' })).status).toBe(404);
     expect((await other('PUT', `/users/${multi.users.CASHIER}/pin`, { pin: '1234' })).status).toBe(404);
@@ -193,5 +134,55 @@ describe('team access', () => {
     const res = await owner('POST', '/users', worker({ location_ids: [multi.locations[0]] }));
     expect(res.status).toBe(201);
     expect(res.body.allowed_location_ids).toEqual([]);
+  });
+});
+
+describe('mi cuenta (/me)', () => {
+  it('anyone changes its own PIN; the current one is asked and wrong ones count toward the lockout', async () => {
+    const owner = await client(app, multi.users.OWNER);
+    const { body: created } = await owner('POST', '/users', worker());
+    const me = await client(app, created.id);
+    expect((await me('PUT', '/me/pin', { pin: '5678' })).status).toBe(400);
+    const wrong = await me('PUT', '/me/pin', { current_pin: '0000', pin: '5678' });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.message).toContain('PIN actual');
+    expect((await db.users.findUniqueOrThrow({ where: { id: created.id } })).pin_failed_count).toBe(1);
+    expect((await me('PUT', '/me/pin', { current_pin: '1234', pin: '5678' })).status).toBe(204);
+    const stored = await db.users.findUniqueOrThrow({ where: { id: created.id } });
+    await expect(verifyPassword('5678', stored.pin_hash!)).resolves.toBe(true);
+    expect(stored.pin_failed_count).toBe(0);
+  });
+
+  it('a user without PIN creates one without a current PIN', async () => {
+    await db.users.update({ where: { id: single.users.OWNER }, data: { pin_hash: null } });
+    const owner = await client(app, single.users.OWNER);
+    expect((await owner('PUT', '/me/pin', { pin: '2468' })).status).toBe(204);
+  });
+
+  it('the owner changes its names without a password', async () => {
+    const owner = await client(app, single.users.OWNER);
+    const res = await owner('PATCH', '/me', { given_names: 'Dueña', family_names: 'Prueba' });
+    expect(res.status).toBe(200);
+    expect(res.body.full_name).toBe('Dueña Prueba');
+  });
+
+  it('the owner changes its username, email and password with the current password', async () => {
+    const hash = await hashPassword('clave-actual');
+    await db.users.update({ where: { id: single.users.OWNER }, data: { password_hash: hash } });
+    const owner = await client(app, single.users.OWNER);
+    expect((await owner('PATCH', '/me', { username: 'dueno.nuevo' })).status).toBe(400);
+    expect((await owner('PATCH', '/me', { username: 'dueno.nuevo', current_password: 'otra' })).status).toBe(400);
+    const taken = await db.users.findUniqueOrThrow({ where: { id: multi.users.OWNER } });
+    expect((await owner('PATCH', '/me', { email: taken.email, current_password: 'clave-actual' })).status).toBe(409);
+    expect((await owner('PATCH', '/me', { password: 'corta', current_password: 'clave-actual' })).status).toBe(400);
+    const email = `nuevo-${randomUUID().slice(0, 8)}@test.demo`;
+    const res = await owner('PATCH', '/me', { username: 'dueno.nuevo', email: email.toUpperCase(), password: 'clave nueva larga', current_password: 'clave-actual' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ username: 'dueno.nuevo', email });
+    const stored = await db.users.findUniqueOrThrow({ where: { id: single.users.OWNER } });
+    await expect(verifyPassword('clave nueva larga', stored.password_hash!)).resolves.toBe(true);
+
+    const cashier = await client(app, single.users.CASHIER);
+    expect((await cashier('PATCH', '/me', { username: 'caja.x', current_password: 'x' })).status).toBe(403);
   });
 });

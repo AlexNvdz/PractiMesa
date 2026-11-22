@@ -131,7 +131,7 @@ export default function RegistroPage() {
                       autoCapitalize="none"
                       autoComplete="off"
                       spellCheck={false}
-                      placeholder="PizzeriaDario"
+                      placeholder="TuNegocio"
                       aria-invalid={handleBad || undefined}
                       aria-describedby={handleHint}
                       className={`${field} pl-7`}
@@ -143,7 +143,7 @@ export default function RegistroPage() {
                 </label>
                 <label className="block">
                   <span className={labelClass}>Nombre del negocio</span>
-                  {input("business_name", { maxLength: 150, autoComplete: "organization", placeholder: "Pizzería Darío" })}
+                  {input("business_name", { maxLength: 150, autoComplete: "organization", placeholder: "Nombre de tu negocio" })}
                 </label>
                 <label className="block">
                   <span className={labelClass}>NIT</span>
@@ -183,16 +183,16 @@ export default function RegistroPage() {
                 <legend className="mb-4 text-[15px] font-semibold">Tu primera sede</legend>
                 <label className="block">
                   <span className={labelClass}>Nombre de la sede</span>
-                  {input("location_name", { maxLength: 120, placeholder: "Sede Centro" })}
+                  {input("location_name", { maxLength: 120, placeholder: "Sede principal" })}
                 </label>
                 <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
                   <label className="block">
                     <span className={labelClass}>Ciudad</span>
-                    {input("city", { maxLength: 80, autoComplete: "address-level2", placeholder: "Medellín" })}
+                    {input("city", { maxLength: 80, autoComplete: "address-level2", placeholder: "Ciudad" })}
                   </label>
                   <label className="block">
                     <span className={labelClass}>Dirección</span>
-                    {input("address", { maxLength: 300, autoComplete: "street-address", placeholder: "Calle 10 #40-20" })}
+                    {input("address", { maxLength: 300, autoComplete: "street-address", placeholder: "Calle 00 #00-00" })}
                   </label>
                 </div>
               </fieldset>

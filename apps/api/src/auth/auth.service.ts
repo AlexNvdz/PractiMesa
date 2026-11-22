@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { hashPassword, verifyPassword } from './password';
 
@@ -38,13 +38,20 @@ export interface Registration {
 
 const usable = () => ({ used_at: null, revoked_at: null, expires_at: { gt: new Date() } });
 
-/** Only the owner and admins sign in with email + password (Q32); everyone else uses username + PIN. */
-const MANAGERS = new Set(['OWNER', 'ADMIN']);
-export const PIN_ONLY = 'Entra con tu usuario y PIN en un dispositivo autorizado del negocio.';
+/** Only the owner signs in with email + password; everyone else, supervisors included, uses username + PIN. */
+export const PIN_ONLY = 'Entra con tu usuario y PIN en un dispositivo vinculado del negocio.';
 export const PIN_WRONG = 'Usuario o PIN incorrecto';
-export const DEVICE_NOT_AUTHORIZED = 'Este dispositivo no está autorizado. Pide al dueño o a un administrador que lo autorice.';
+export const DEVICE_NOT_LINKED = 'Este dispositivo no está vinculado. Pide al dueño un código de vinculación.';
+export const CODE_WRONG = 'Código incorrecto o vencido. Pide al dueño uno nuevo.';
 const PIN_MAX_FAILS = 5;
 const PIN_LOCK_MS = 5 * 60 * 1000;
+
+// Link codes: 8 characters without look-alikes (0/O, 1/I/L), typed on the new device; 31^8 ≈ 8.5e11 combinations.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export const CODE_TTL_MS = 10 * 60 * 1000;
+export const newLinkCode = () => Array.from({ length: 8 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
+/** "abcd-efgh" and "ABCDEFGH" are the same code. */
+export const linkCodeHash = (code: string) => sha256(code.toUpperCase().replace(/[^A-Z0-9]/g, ''));
 
 export interface Tokens {
   accessToken: string;
@@ -62,7 +69,7 @@ export class AuthService {
     private readonly jwt: JwtService,
   ) {}
 
-  /** Owner/admin login. A typed business handle must be the user's own business. */
+  /** Owner login. A typed business handle must be the user's own business. */
   async login(email: string, password: string, handle?: string): Promise<Tokens> {
     const user = await this.prisma.users.findUnique({
       where: { email: email.trim().toLowerCase() },
@@ -71,62 +78,84 @@ export class AuthService {
     const valid = await verifyPassword(password, user?.password_hash ?? (await this.dummyHash));
     const otherBusiness = handle !== undefined && user?.organizations.handle.toLowerCase() !== handle.toLowerCase();
     if (!user || !valid || otherBusiness) throw new UnauthorizedException('Correo o contraseña incorrectos');
-    if (!MANAGERS.has(user.role)) throw new ForbiddenException(PIN_ONLY);
+    if (user.role !== 'OWNER') throw new ForbiddenException(PIN_ONLY);
     return this.issue(user.id);
   }
 
-  /**
-   * Login step 1 (Q32): the business behind a handle, its active locations (for "remember this device")
-   * and this browser's authorized device for it, if any. Handles are public (store address).
-   */
+  /** Login step 1: the business behind a handle and this browser's linked device for it, if any. Handles are public (store address). */
   async business(handle: string, deviceToken: string | undefined) {
-    const [org] = await this.prisma.$queryRaw<{ id: string }[]>`SELECT id FROM organizations WHERE lower(handle) = lower(${handle})`;
-    if (!org) throw new NotFoundException('No encontramos ese negocio. Revisa el identificador.');
-    const [details, device] = await Promise.all([
-      this.prisma.organizations.findUniqueOrThrow({
-        where: { id: org.id },
-        select: {
-          handle: true,
-          name: true,
-          plan_tier: true,
-          locations: { where: { is_active: true }, select: { id: true, name: true }, orderBy: { name: 'asc' } },
-        },
-      }),
-      this.device(deviceToken, org.id),
-    ]);
-    return { ...details, device: device && { id: device.id, name: device.name, location: device.locations } };
+    const org = await this.findBusiness(handle);
+    const device = await this.device(deviceToken, org.id);
+    return { handle: org.handle, name: org.name, device: device && { id: device.id, name: device.name, location: device.locations } };
   }
 
-  /** Worker login (Q32): username + PIN, only on an authorized device; the session belongs to that device. */
-  async pinLogin(deviceToken: string | undefined, role: string, username: string, pin: string): Promise<Tokens> {
+  private async findBusiness(handle: string) {
+    const [org] = await this.prisma.$queryRaw<{ id: string; handle: string; name: string }[]>`
+      SELECT id, handle, name FROM organizations WHERE lower(handle) = lower(${handle})`;
+    if (!org) throw new NotFoundException('No encontramos ese negocio. Revisa el identificador.');
+    return org;
+  }
+
+  /**
+   * Links this browser with a one-time code the owner generated (spent here, of two uses only one wins).
+   * Returns the device cookie token; a device this browser had before is deleted.
+   */
+  async linkDevice(handle: string, code: string, previousToken: string | undefined) {
+    const org = await this.findBusiness(handle);
+    const token = randomBytes(32).toString('base64url');
+    const device = await this.prisma.$transaction(async (tx) => {
+      const link = await tx.device_codes.findFirst({
+        where: { code_hash: linkCodeHash(code), organization_id: org.id, expires_at: { gt: new Date() }, locations: { is_active: true } },
+      });
+      if (!link || !(await tx.device_codes.deleteMany({ where: { id: link.id } })).count) throw new UnauthorizedException(CODE_WRONG);
+      if (previousToken) await tx.devices.deleteMany({ where: { token_hash: sha256(previousToken) } });
+      return tx.devices.create({
+        data: { organization_id: org.id, location_id: link.location_id, name: link.name, token_hash: sha256(token), created_by: link.created_by },
+        include: { locations: { select: { id: true, name: true } } },
+      });
+    });
+    return { token, device: { id: device.id, name: device.name, location: device.locations } };
+  }
+
+  /** Username + PIN, only on a linked device; role and location come from the user and the device. */
+  async pinLogin(deviceToken: string | undefined, username: string, pin: string): Promise<Tokens> {
     const device = await this.device(deviceToken);
-    if (!device) throw new UnauthorizedException(DEVICE_NOT_AUTHORIZED);
+    if (!device) throw new UnauthorizedException(DEVICE_NOT_LINKED);
     const user = await this.prisma.users.findFirst({ where: { organization_id: device.organization_id, username } });
-    if (user?.pin_locked_until && user.pin_locked_until > new Date()) {
-      throw new HttpException('Demasiados intentos con ese usuario. Espera 5 minutos e inténtalo de nuevo.', HttpStatus.TOO_MANY_REQUESTS);
-    }
-    const valid = await verifyPassword(pin, user?.pin_hash ?? (await this.dummyHash));
     const here = !!user && (user.allowed_location_ids.length === 0 || user.allowed_location_ids.includes(device.location_id));
-    // One message for unknown user, other role, other location or wrong PIN: nothing to learn from the error.
-    if (!user || !valid || user.role !== role || !here) {
-      if (user) await this.failPin(user.id);
-      throw new UnauthorizedException(PIN_WRONG);
-    }
-    await this.prisma.users.update({ where: { id: user.id }, data: { pin_failed_count: 0, pin_locked_until: null } });
+    // One message for unknown user, other location or wrong PIN: nothing to learn from the error.
+    if (!(await this.checkPin(user, pin, here)) || !user) throw new UnauthorizedException(PIN_WRONG);
     await this.prisma.devices.update({ where: { id: device.id }, data: { last_used_at: new Date() } });
     return this.issue(user.id, device.id);
   }
 
-  /** Usable device of a browser token: not revoked, at an active location (optionally of one business). */
+  /** Device of a browser token at an active location (optionally of one business). */
   private device(token: string | undefined, organizationId?: string) {
     if (!token) return Promise.resolve(null);
     return this.prisma.devices.findFirst({
-      where: { token_hash: sha256(token), revoked_at: null, organization_id: organizationId, locations: { is_active: true } },
+      where: { token_hash: sha256(token), organization_id: organizationId, locations: { is_active: true } },
       include: { locations: { select: { id: true, name: true } } },
     });
   }
 
-  /** The 5th wrong PIN in a row locks the user for 5 minutes. */
+  /**
+   * PIN check with the lockout: the 5th failure in a row locks the user for 5 minutes (429).
+   * `ok` = other conditions of the attempt; a failed one counts like a wrong PIN.
+   */
+  async checkPin(user: { id: string; pin_hash: string | null; pin_locked_until: Date | null } | null, pin: string, ok = true) {
+    if (user?.pin_locked_until && user.pin_locked_until > new Date()) {
+      throw new HttpException('Demasiados intentos con ese usuario. Espera 5 minutos e inténtalo de nuevo.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+    const valid = (await verifyPassword(pin, user?.pin_hash ?? (await this.dummyHash))) && !!user?.pin_hash && ok;
+    if (!user) return false;
+    if (!valid) {
+      await this.failPin(user.id);
+      return false;
+    }
+    await this.prisma.users.update({ where: { id: user.id }, data: { pin_failed_count: 0, pin_locked_until: null } });
+    return true;
+  }
+
   private async failPin(userId: string) {
     const { pin_failed_count } = await this.prisma.users.update({
       where: { id: userId },
@@ -172,11 +201,8 @@ export class AuthService {
       }
       throw new UnauthorizedException();
     }
+    // A PIN session ends with its device: deleting the device deletes its refresh tokens (cascade).
     if (row.expires_at.getTime() <= Date.now()) throw new UnauthorizedException();
-    // A PIN session ends with its device (Q33).
-    if (row.device_id && !(await this.prisma.devices.findFirst({ where: { id: row.device_id, revoked_at: null } }))) {
-      throw new UnauthorizedException();
-    }
 
     // Conditional update: only one of two concurrent refreshes wins the rotation.
     const { count } = await this.prisma.refresh_tokens.updateMany({

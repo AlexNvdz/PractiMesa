@@ -57,11 +57,11 @@ export class TenantMiddleware implements NestMiddleware {
           },
         },
       }),
-      claims.dev ? this.prisma.devices.findUnique({ where: { id: claims.dev }, select: { location_id: true, revoked_at: true } }) : null,
+      claims.dev ? this.prisma.devices.findUnique({ where: { id: claims.dev }, select: { location_id: true } }) : null,
     ]);
     if (!user) throw new UnauthorizedException();
-    // Revoking the device ends its PIN sessions right away, not when the access token expires.
-    if (claims.dev && (!device || device.revoked_at)) throw new UnauthorizedException();
+    // Unlinking (deleting) the device ends its PIN sessions right away, not when the access token expires.
+    if (claims.dev && !device) throw new UnauthorizedException();
 
     const org = user.organizations;
     if (org.suspended_at) throw new ForbiddenException(SUSPENDED);

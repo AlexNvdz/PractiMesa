@@ -1,11 +1,10 @@
 "use client";
 
-import { Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, KeyRound, LoaderCircle, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { FormAlert } from "@/components/form-alert";
-import { button, choice, field } from "@/components/ui";
-import { errorMessage, useApi } from "@/lib/api";
+import { button, field } from "@/components/ui";
 import { ApiError, ROLE_LABEL, type Role, useAuth } from "@/lib/auth";
 
 interface DemoOrganization {
@@ -14,25 +13,19 @@ interface DemoOrganization {
   plan_tier: "SINGLE" | "MULTI";
 }
 
-/** Step 1 answer (Q32): the business and, if this browser is one of its authorized devices, that device. */
+type Device = { id: string; name: string; location: { id: string; name: string } };
+/** Step 1 answer: the business and, if this browser is one of its linked devices, that device. */
 interface Business {
   handle: string;
   name: string;
-  plan_tier: "SINGLE" | "MULTI";
-  locations: { id: string; name: string }[];
-  device: { id: string; name: string; location: { id: string; name: string } } | null;
+  device: Device | null;
 }
+/** Step 2: PIN on a linked device; on another one, link it with a code or the owner signs in with email. */
+type Mode = "pin" | "unlinked" | "code" | "email";
 
-const DEMO_ROLES: { role: Role; label: string }[] = [
-  { role: "OWNER", label: "Dueño" },
-  { role: "ADMIN", label: "Admin" },
-  { role: "CASHIER", label: "Cajero" },
-  { role: "WAITER", label: "Mesero" },
-  { role: "KITCHEN", label: "Cocina" },
-];
-const PIN_ROLES: Role[] = ["CASHIER", "WAITER", "KITCHEN", "ADMIN", "OWNER"];
+const DEMO_ROLES: Role[] = ["OWNER", "ADMIN", "CASHIER", "WAITER", "KITCHEN"];
 const START: Partial<Record<Role, string>> = { CASHIER: "/mesas", WAITER: "/mesas", KITCHEN: "/cocina" };
-/** The business typed on this browser, so the team skips step 1 (Q32). */
+/** The business typed on this browser, so the team skips step 1. */
 const HANDLE_KEY = "pm_handle";
 const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
 
@@ -56,22 +49,26 @@ export default function LoginPage() {
   const router = useRouter();
   // undefined = still reading the remembered business; null = ask for it.
   const [business, setBusiness] = useState<Business | null | undefined>(undefined);
-  const [withEmail, setWithEmail] = useState(false);
-  // While the device is being authorized right after login, stay here.
-  const [holding, setHolding] = useState(false);
+  const [mode, setMode] = useState<Mode>("pin");
   const [demo, setDemo] = useState<DemoOrganization[]>([]);
   const [demoError, setDemoError] = useState<string | null>(null);
   const demoId = useId();
 
   useEffect(() => {
     // Cashiers and waiters work on the table map, the kitchen on its screen; everyone else starts at the summary.
-    if (status === "authenticated" && !holding) router.replace(START[me?.user.role ?? "OWNER"] ?? "/");
-  }, [status, me, router, holding]);
+    if (status === "authenticated") router.replace(START[me?.user.role ?? "OWNER"] ?? "/");
+  }, [status, me, router]);
+
+  const found = (b: Business) => {
+    localStorage.setItem(HANDLE_KEY, b.handle);
+    setMode(b.device ? "pin" : "unlinked");
+    setBusiness(b);
+  };
 
   useEffect(() => {
     const remembered = localStorage.getItem(HANDLE_KEY);
     // Nothing remembered (or no longer found): ask for the handle.
-    (remembered ? lookup(remembered) : Promise.reject(new Error("none"))).then(setBusiness, () => setBusiness(null));
+    (remembered ? lookup(remembered) : Promise.reject(new Error("none"))).then(found, () => setBusiness(null));
   }, []);
 
   // The API answers 404 where demo login is off: then there are no demo buttons.
@@ -90,11 +87,6 @@ export default function LoginPage() {
     }
   }
 
-  const found = (b: Business) => {
-    localStorage.setItem(HANDLE_KEY, b.handle);
-    setWithEmail(false);
-    setBusiness(b);
-  };
   const change = () => {
     localStorage.removeItem(HANDLE_KEY);
     setBusiness(null);
@@ -105,7 +97,9 @@ export default function LoginPage() {
       <div className="w-full max-w-[400px]">
         <p className="enter mb-8 text-center text-xl font-semibold tracking-[-0.02em]">PractiMesa</p>
 
-        <div className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
+        {/* Next keeps this page mounted (hidden) while the panel is open: remounting on every session change
+            clears typed PINs and passwords and the "Entrando…" state for the next person. */}
+        <div key={status} className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
           {business === undefined && (
             <div role="status" className="flex justify-center py-10 text-muted">
               {spinner}
@@ -123,14 +117,17 @@ export default function LoginPage() {
                     {business.device && ` · ${business.device.location.name}`}
                   </p>
                 </div>
-                <button type="button" onClick={change} className={`${button.ghost} -mr-3 -mt-1`}>
+                <button type="button" onClick={change} className={`${button.ghost} -mt-1 -mr-3`}>
                   Cambiar
                 </button>
               </div>
-              {business.device && !withEmail ? (
-                <PinStep onEmail={() => setWithEmail(true)} />
-              ) : (
-                <EmailStep business={business} onHold={setHolding} onPin={business.device ? () => setWithEmail(false) : undefined} />
+              {mode === "pin" && <PinStep onEmail={() => setMode("email")} />}
+              {mode === "unlinked" && <UnlinkedStep onCode={() => setMode("code")} onEmail={() => setMode("email")} />}
+              {mode === "code" && (
+                <CodeStep handle={business.handle} onLinked={(device) => found({ ...business, device })} onBack={() => setMode("unlinked")} />
+              )}
+              {mode === "email" && (
+                <EmailStep handle={business.handle} linked={!!business.device} onBack={() => setMode(business.device ? "pin" : "unlinked")} />
               )}
             </>
           )}
@@ -152,16 +149,16 @@ export default function LoginPage() {
                     {org.name} · {org.plan_tier === "SINGLE" ? "1 sede" : "varias sedes"}
                   </p>
                 )}
-                {/* Managers on the first row, the three staff roles on the second. */}
+                {/* Owner and supervisor on the first row, the three staff roles on the second. */}
                 <div className="grid grid-cols-6 gap-2">
-                  {DEMO_ROLES.map(({ role, label }) => (
+                  {DEMO_ROLES.map((role) => (
                     <button
                       key={role}
                       type="button"
                       onClick={() => void enterDemo(org.handle, role)}
                       className={`${button.secondary} ${role === "OWNER" || role === "ADMIN" ? "col-span-3" : "col-span-2 px-2"}`}
                     >
-                      {label}
+                      {ROLE_LABEL[role]}
                     </button>
                   ))}
                 </div>
@@ -176,7 +173,7 @@ export default function LoginPage() {
         )}
 
         <p className={`enter mt-6 text-center text-sm text-muted text-pretty ${demo.length ? "[--i:3]" : "[--i:2]"}`}>
-          ¿No tienes acceso? Pídele una cuenta al dueño de tu restaurante.
+          ¿No tienes usuario? Pídeselo al dueño de tu negocio.
         </p>
       </div>
     </main>
@@ -189,6 +186,21 @@ async function lookup(handle: string): Promise<Business> {
   return (await res.json()) as Business;
 }
 
+/** Link to the other way in, under the main button. */
+function SwitchLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <p className="text-center">
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2 text-sm font-medium text-accent-strong underline-offset-2 hover:underline"
+      >
+        {children}
+      </button>
+    </p>
+  );
+}
+
 function HandleStep({ onFound }: { onFound: (business: Business) => void }) {
   const [handle, setHandle] = useState("");
   const [busy, setBusy] = useState(false);
@@ -197,7 +209,7 @@ function HandleStep({ onFound }: { onFound: (business: Business) => void }) {
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!/^[A-Za-z0-9_]{3,30}$/.test(handle)) return setError("Escribe el identificador de tu negocio, por ejemplo @PizzeriaDario.");
+    if (!/^[A-Za-z0-9_]{3,30}$/.test(handle)) return setError("El identificador lleva letras, números y _ (de 3 a 30).");
     setBusy(true);
     setError(null);
     try {
@@ -227,7 +239,7 @@ function HandleStep({ onFound }: { onFound: (business: Business) => void }) {
               autoComplete="organization"
               spellCheck={false}
               enterKeyHint="go"
-              placeholder="PizzeriaDario"
+              placeholder="TuNegocio"
               aria-invalid={error ? true : undefined}
               aria-describedby={error ? errorId : undefined}
               className={`${field} pl-7`}
@@ -244,9 +256,9 @@ function HandleStep({ onFound }: { onFound: (business: Business) => void }) {
   );
 }
 
+/** Username + PIN on a linked device: the API finds the role and the location from the user and the device. */
 function PinStep({ onEmail }: { onEmail: () => void }) {
   const { pinLogin } = useAuth();
-  const [role, setRole] = useState<Role>("CASHIER");
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
@@ -259,7 +271,7 @@ function PinStep({ onEmail }: { onEmail: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await pinLogin(role, username, pin);
+      await pinLogin(username, pin);
     } catch (err) {
       setError(messageFor(err, "Usuario o PIN incorrecto."));
       setPin("");
@@ -270,17 +282,6 @@ function PinStep({ onEmail }: { onEmail: () => void }) {
   const invalid = error ? { "aria-invalid": true, "aria-describedby": errorId } : {};
   return (
     <form className="space-y-5" onSubmit={onSubmit} noValidate>
-      <fieldset>
-        <legend className={labelClass}>Entras como</legend>
-        <div className="grid grid-cols-3 gap-2">
-          {PIN_ROLES.map((r) => (
-            <label key={r} className={`${choice} px-2`}>
-              <input type="radio" name="role" checked={role === r} onChange={() => setRole(r)} className="sr-only" />
-              {r === "ADMIN" ? "Admin" : ROLE_LABEL[r]}
-            </label>
-          ))}
-        </div>
-      </fieldset>
       <label className="block">
         <span className={labelClass}>Usuario</span>
         <input
@@ -290,7 +291,7 @@ function PinStep({ onEmail }: { onEmail: () => void }) {
           autoCapitalize="none"
           autoComplete="username"
           spellCheck={false}
-          placeholder="alex.navarro"
+          placeholder="usuario.ejemplo"
           className={`${field} font-mono`}
           {...invalid}
         />
@@ -313,65 +314,124 @@ function PinStep({ onEmail }: { onEmail: () => void }) {
         {busy && spinner}
         {busy ? "Entrando…" : "Entrar"}
       </button>
-      <p className="text-center text-sm text-muted">
-        ¿Eres el dueño o administrador?{" "}
-        <button type="button" onClick={onEmail} className="font-medium text-accent-strong underline-offset-2 hover:underline">
-          Entrar con correo
-        </button>
-      </p>
+      <SwitchLink onClick={onEmail}>¿Eres el dueño? Entra con tu correo</SwitchLink>
     </form>
   );
 }
 
-function EmailStep({ business, onHold, onPin }: { business: Business; onHold: (hold: boolean) => void; onPin?: () => void }) {
+/** A browser that is not linked: the team cannot use PIN here until the owner links it. */
+function UnlinkedStep({ onCode, onEmail }: { onCode: () => void; onEmail: () => void }) {
+  return (
+    <div>
+      <p className="-mt-2 text-[15px] text-ink-2 text-pretty">
+        Este dispositivo no está vinculado. Para que tu equipo entre aquí con usuario y PIN, pídele al dueño un código de vinculación.
+      </p>
+      <div className="mt-6 space-y-3">
+        <button type="button" onClick={onCode} className={`${button.primary} w-full`}>
+          <KeyRound size={18} strokeWidth={2.25} aria-hidden />
+          Tengo un código de vinculación
+        </button>
+        <button type="button" onClick={onEmail} className={`${button.secondary} w-full`}>
+          <Mail size={18} strokeWidth={2.25} aria-hidden />
+          Soy el dueño: entrar con correo
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** One-time code from the owner: links this browser to the location and name the owner chose. */
+function CodeStep({ handle, onLinked, onBack }: { handle: string; onLinked: (device: Device) => void; onBack: () => void }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+  const hintId = useId();
+  const clean = code.replace("-", "");
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (clean.length !== 8) return setError("El código tiene 8 caracteres.");
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ handle, code: clean }),
+      });
+      const body = (await res.json().catch(() => null)) as (Device & { message?: unknown }) | null;
+      if (!res.ok) throw new ApiError(res.status, typeof body?.message === "string" ? body.message : undefined);
+      onLinked(body as Device);
+    } catch (err) {
+      setError(messageFor(err, "Código incorrecto o vencido. Pide al dueño uno nuevo."));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="space-y-5" onSubmit={onSubmit} noValidate>
+      <label className="block">
+        <span className={labelClass}>Código de vinculación</span>
+        <input
+          value={code}
+          // Shown as ABCD-EFGH, the way the owner sees it; the API ignores the dash.
+          onChange={(e) => {
+            const raw = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+            setCode(raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw);
+          }}
+          autoCapitalize="characters"
+          autoComplete="one-time-code"
+          spellCheck={false}
+          enterKeyHint="go"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+          className={`${field} font-mono text-lg tracking-[0.2em]`}
+        />
+        <span id={hintId} className="mt-1.5 block text-sm text-muted text-pretty">
+          El dueño lo genera en Dispositivos. Sirve una sola vez y vence a los 10 minutos.
+        </span>
+      </label>
+      {error && <FormAlert id={errorId}>{error}</FormAlert>}
+      <button type="submit" disabled={busy} className={`${button.primary} w-full`}>
+        {busy && spinner}
+        {busy ? "Vinculando…" : "Vincular dispositivo"}
+      </button>
+      <SwitchLink onClick={onBack}>
+        <ArrowLeft size={16} strokeWidth={2.25} aria-hidden />
+        Volver
+      </SwitchLink>
+    </form>
+  );
+}
+
+/** Only the owner signs in with email + password, from any browser. */
+function EmailStep({ handle, linked, onBack }: { handle: string; linked: boolean; onBack: () => void }) {
   const { login } = useAuth();
-  const api = useApi();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(false);
-  const [deviceName, setDeviceName] = useState("");
-  const [locationId, setLocationId] = useState(business.locations[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Signed in, but this device could not be remembered: say so before going on.
-  const [inside, setInside] = useState(false);
   const errorId = useId();
-  const multi = business.plan_tier === "MULTI";
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!email.trim() || !password) return setError("Escribe tu correo y tu contraseña.");
-    if (remember && !deviceName.trim()) return setError("Ponle un nombre a este dispositivo, por ejemplo Caja principal.");
     setBusy(true);
     setError(null);
-    onHold(remember);
     try {
-      await login(email, password, business.handle);
+      await login(email, password, handle);
     } catch (err) {
       setError(messageFor(err));
       setBusy(false);
-      onHold(false);
-      return;
-    }
-    if (!remember) return;
-    try {
-      await api("/devices", "POST", { name: deviceName.trim(), ...(multi ? { location_id: locationId } : {}) });
-      onHold(false);
-    } catch (err) {
-      setInside(true);
-      setError(`Entraste, pero no pudimos recordar este dispositivo: ${errorMessage(err)}`);
     }
   }
 
-  const invalid = error && !inside ? { "aria-invalid": true, "aria-describedby": errorId } : {};
+  const invalid = error ? { "aria-invalid": true, "aria-describedby": errorId } : {};
   return (
     <form className="space-y-5" onSubmit={onSubmit} noValidate>
-      {!onPin && (
-        <p className="-mt-2 text-sm text-muted text-pretty">
-          Dueño o administrador: entra con tu correo. Para que tu equipo entre con usuario y PIN aquí, recuerda este dispositivo.
-        </p>
-      )}
+      <p className="-mt-2 text-sm text-muted text-pretty">Solo el dueño entra con correo. Tu equipo entra con usuario y PIN.</p>
       <label className="block">
         <span className={labelClass}>Correo</span>
         <input
@@ -382,7 +442,7 @@ function EmailStep({ business, onHold, onPin }: { business: Business; onHold: (h
           spellCheck={false}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="tu@restaurante.com"
+          placeholder="correo@ejemplo.com"
           className={field}
           {...invalid}
         />
@@ -409,68 +469,21 @@ function EmailStep({ business, onHold, onPin }: { business: Business; onHold: (h
           </button>
         </span>
       </label>
-
-      {!onPin && (
-        <div className="rounded-control border border-line p-4">
-          <label className="flex items-start gap-3 text-[15px]">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-              className="mt-0.5 size-5 shrink-0 accent-accent"
-            />
-            <span>
-              Recordar este dispositivo para el equipo
-              <span className="block text-sm text-muted">Cajeros, meseros y cocina podrán entrar aquí con su usuario y PIN.</span>
-            </span>
-          </label>
-          {remember && (
-            <div className="mt-4 space-y-4">
-              <label className="block">
-                <span className={labelClass}>Nombre del dispositivo</span>
-                <input
-                  value={deviceName}
-                  onChange={(e) => setDeviceName(e.target.value)}
-                  maxLength={80}
-                  placeholder="Caja principal"
-                  className={field}
-                />
-              </label>
-              {multi && (
-                <label className="block">
-                  <span className={labelClass}>Sede</span>
-                  <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={field}>
-                    {business.locations.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {error && <FormAlert id={errorId}>{error}</FormAlert>}
-      {inside ? (
-        <button type="button" onClick={() => onHold(false)} className={`${button.primary} w-full`}>
-          Continuar al panel
-        </button>
-      ) : (
-        <button type="submit" disabled={busy} className={`${button.primary} w-full`}>
-          {busy && spinner}
-          {busy ? "Entrando…" : "Entrar"}
-        </button>
-      )}
-      {onPin && (
-        <p className="text-center text-sm text-muted">
-          <button type="button" onClick={onPin} className="font-medium text-accent-strong underline-offset-2 hover:underline">
-            Entrar con usuario y PIN
-          </button>
-        </p>
-      )}
+      <button type="submit" disabled={busy} className={`${button.primary} w-full`}>
+        {busy && spinner}
+        {busy ? "Entrando…" : "Entrar"}
+      </button>
+      <SwitchLink onClick={onBack}>
+        {linked ? (
+          "Entrar con usuario y PIN"
+        ) : (
+          <>
+            <ArrowLeft size={16} strokeWidth={2.25} aria-hidden />
+            Volver
+          </>
+        )}
+      </SwitchLink>
     </form>
   );
 }

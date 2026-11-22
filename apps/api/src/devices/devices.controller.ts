@@ -1,10 +1,8 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Post, Req, Res } from '@nestjs/common';
-import type { Request, Response } from 'express';
-import { randomBytes } from 'node:crypto';
-import { DEVICE_COOKIE, deviceCookieOptions, readCookie } from '../auth/auth.controller';
-import { sha256 } from '../auth/auth.service';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
+import { DEVICE_COOKIE, readCookie } from '../auth/auth.controller';
+import { CODE_TTL_MS, linkCodeHash, newLinkCode, sha256 } from '../auth/auth.service';
 import { Roles } from '../common/guards/roles.guard';
-import type { TenantContext } from '../common/tenant/tenant-context';
 import { parseBody, text, uuid } from '../common/validation';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -13,74 +11,54 @@ const DEVICE = {
   name: true,
   location_id: true,
   last_used_at: true,
-  revoked_at: true,
   created_at: true,
   token_hash: true,
   locations: { select: { name: true } },
-  users: { select: { full_name: true } },
 } as const;
 
 /**
- * Authorized devices (Q29, Q33): browsers where workers may sign in with username + PIN, each at one location.
- * The owner manages every device; an admin only those of its locations (Q42).
+ * Linked devices: browsers where the team signs in with username + PIN, each at one location.
+ * Only the owner links them (one-time code) and unlinks them (deleted, with their sessions).
  */
 @Controller('devices')
-@Roles('OWNER', 'ADMIN')
+@Roles('OWNER')
 export class DevicesController {
   constructor(private readonly prisma: PrismaService) {}
 
   @Get()
   async list(@Req() req: Request) {
-    const tenant = req.tenant!;
     const mine = readCookie(req, DEVICE_COOKIE);
-    const devices = await this.prisma.forTenant(tenant.organizationId).devices.findMany({
-      where: this.scope(tenant),
+    const devices = await this.prisma.forTenant(req.tenant!.organizationId).devices.findMany({
       select: DEVICE,
-      orderBy: [{ revoked_at: { sort: 'desc', nulls: 'first' } }, { created_at: 'desc' }],
+      orderBy: { created_at: 'desc' },
     });
     // The token hash never leaves the API: only whether it is this browser.
     return devices.map(({ token_hash, ...d }) => ({ ...d, current: !!mine && token_hash === sha256(mine) }));
   }
 
-  /** Authorizes this browser (sets the device cookie). Re-authorizing replaces this browser's previous device. */
-  @Post()
-  async authorize(@Req() req: Request, @Body() body: unknown, @Res({ passthrough: true }) res: Response) {
+  /** One-time code (10 minutes) the new device types after the handle; it carries the location and name. */
+  @Post('codes')
+  async code(@Req() req: Request, @Body() body: unknown) {
     const tenant = req.tenant!;
     const data = parseBody<{ name: string; location_id?: string }>(body, { name: text(80), location_id: uuid }, ['name']);
     const locationId = tenant.planTier === 'SINGLE' ? tenant.locationIds[0] : data.location_id;
-    if (!locationId || !tenant.locationIds.includes(locationId)) throw new BadRequestException('Elige una sede donde trabajes');
+    if (!locationId || !tenant.locationIds.includes(locationId)) throw new BadRequestException('Elige una sede activa');
 
-    const token = randomBytes(32).toString('base64url');
-    const previous = readCookie(req, DEVICE_COOKIE);
-    const device = await this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
-      if (previous) {
-        await tx.devices.updateMany({ where: { token_hash: sha256(previous), revoked_at: null }, data: { revoked_at: new Date() } });
-      }
-      return tx.devices.create({
-        data: { name: data.name, location_id: locationId, token_hash: sha256(token), created_by: tenant.userId },
-        select: DEVICE,
+    const code = newLinkCode();
+    const expiresAt = new Date(Date.now() + CODE_TTL_MS);
+    await this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
+      await tx.device_codes.deleteMany({ where: { expires_at: { lte: new Date() } } });
+      await tx.device_codes.create({
+        data: { name: data.name, location_id: locationId, code_hash: linkCodeHash(code), created_by: tenant.userId, expires_at: expiresAt },
       });
     });
-    res.cookie(DEVICE_COOKIE, token, deviceCookieOptions());
-    const { token_hash: _, ...view } = device;
-    return { ...view, current: true };
+    return { code, expires_at: expiresAt };
   }
 
-  /** Revoking a device ends its PIN sessions (Q33): TenantMiddleware and refresh both check it. */
-  @Post(':id/revoke')
+  /** Unlinking deletes the device; its PIN sessions go with it (refresh_tokens cascade, TenantMiddleware finds no device). */
+  @Delete(':id')
   @HttpCode(204)
-  async revoke(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
-    const tenant = req.tenant!;
-    const device = await this.prisma.forTenant(tenant.organizationId).devices.findUniqueOrThrow({ where: { id } });
-    if (tenant.role !== 'OWNER' && !tenant.locationIds.includes(device.location_id)) {
-      throw new ForbiddenException('Ese dispositivo es de una sede que no manejas');
-    }
-    await this.prisma.forTenant(tenant.organizationId).devices.update({ where: { id }, data: { revoked_at: device.revoked_at ?? new Date() } });
-    // Refresh tokens live on the system path (no tenant grant); the device was checked above.
-    await this.prisma.refresh_tokens.updateMany({ where: { device_id: id, revoked_at: null }, data: { revoked_at: new Date() } });
-  }
-
-  private scope(tenant: TenantContext) {
-    return tenant.role === 'OWNER' ? {} : { location_id: { in: tenant.locationIds } };
+  async remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    await this.prisma.forTenant(req.tenant!.organizationId).devices.delete({ where: { id } });
   }
 }

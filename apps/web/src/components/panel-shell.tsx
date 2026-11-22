@@ -13,6 +13,7 @@ import {
   MonitorSmartphone,
   Package,
   ReceiptText,
+  UserRound,
   Users,
   Wallet,
   X,
@@ -38,8 +39,8 @@ const NAV: NavItem[] = [
   { label: "Cocina", icon: ChefHat, href: "/cocina", roles: ["OWNER", "ADMIN", "KITCHEN"] },
   { label: "Catálogo", icon: BookOpen, href: "/catalogo", roles: ["OWNER", "ADMIN"] },
   { label: "Inventario", icon: Package, href: "/inventario", roles: ["OWNER", "ADMIN", "CASHIER"] },
-  { label: "Equipo", icon: Users, href: "/equipo", roles: ["OWNER", "ADMIN"] },
-  { label: "Dispositivos", icon: MonitorSmartphone, href: "/dispositivos", roles: ["OWNER", "ADMIN"] },
+  { label: "Equipo", icon: Users, href: "/equipo", roles: ["OWNER"] },
+  { label: "Dispositivos", icon: MonitorSmartphone, href: "/dispositivos", roles: ["OWNER"] },
   { label: "Sedes", icon: MapPin, href: "/sedes", roles: ["OWNER"] },
   { label: "Reportes", icon: ChartColumn },
 ];
@@ -130,10 +131,21 @@ function Sidebar({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
             </p>
           </div>
         </div>
+        <Link
+          href="/mi-cuenta"
+          onClick={onNavigate}
+          aria-current={pathname === "/mi-cuenta" ? "page" : undefined}
+          className={`mt-1 flex h-10 w-full items-center gap-3 rounded-control px-3 text-sm transition-[background-color,color] duration-150 ${
+            pathname === "/mi-cuenta" ? "bg-accent-soft font-medium text-accent-strong" : "text-ink-2 hover:bg-ground hover:text-ink"
+          }`}
+        >
+          <UserRound size={18} strokeWidth={pathname === "/mi-cuenta" ? 2.25 : 2} aria-hidden />
+          Mi cuenta
+        </Link>
         <button
           type="button"
           onClick={() => void logout()}
-          className="mt-1 flex h-10 w-full items-center gap-3 rounded-control px-3 text-sm text-ink-2 transition-[background-color,color] duration-150 hover:bg-ground hover:text-ink"
+          className="flex h-10 w-full items-center gap-3 rounded-control px-3 text-sm text-ink-2 transition-[background-color,color] duration-150 hover:bg-ground hover:text-ink"
         >
           <LogOut size={18} aria-hidden />
           Cerrar sesión
