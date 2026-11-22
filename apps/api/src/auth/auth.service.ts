@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,7 +12,29 @@ const REUSE_GRACE_MS = 30 * 1000;
 /** Shown when the platform suspended the business (Q27). */
 export const SUSPENDED = 'Este negocio está suspendido. Escríbenos para reactivarlo.';
 
-const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+export const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
+
+/** Demo organizations (Q13), fixed in code so demo login can never open a real business. */
+export const DEMO_HANDLES = ['cafe_ejemplo', 'cadena_ejemplo'];
+/** Handles nobody can sign up with: demo businesses and subdomains the app itself uses (Q4). */
+const RESERVED_HANDLES = new Set([...DEMO_HANDLES, 'app', 'www', 'api', 'admin', 'plataforma', 'demo']);
+export const INVITATION_GONE = 'Esta invitación no existe, ya se usó o venció. Pídele una nueva a PractiMesa.';
+
+/** Sign-up form (Q28): the business, its owner and its first location. */
+export interface Registration {
+  handle: string;
+  business_name: string;
+  nit?: string | null;
+  owner_name: string;
+  email: string;
+  phone: string;
+  password: string;
+  location_name: string;
+  city: string;
+  address: string;
+}
+
+const usable = () => ({ used_at: null, revoked_at: null, expires_at: { gt: new Date() } });
 
 export interface Tokens {
   accessToken: string;
@@ -88,6 +110,54 @@ export class AuthService {
       where: { token_hash: sha256(token), revoked_at: null },
       data: { revoked_at: new Date() },
     });
+  }
+
+  /** Plan of a usable invitation, for the sign-up page. */
+  async invitation(token: string) {
+    const invitation = await this.prisma.invitations.findFirst({
+      where: { token_hash: sha256(token), ...usable() },
+      select: { plan_tier: true, max_locations: true },
+    });
+    if (!invitation) throw new NotFoundException(INVITATION_GONE);
+    return invitation;
+  }
+
+  /** Creates business + first location + OWNER in one transaction, spends the invitation and logs the owner in. */
+  async register(token: string, data: Registration): Promise<Tokens> {
+    const password_hash = await hashPassword(data.password);
+    const email = data.email.toLowerCase();
+    const userId = await this.prisma.$transaction(async (tx) => {
+      const invitation = await tx.invitations.findFirst({ where: { token_hash: sha256(token), ...usable() } });
+      if (!invitation) throw new NotFoundException(INVITATION_GONE);
+      const taken = await tx.$queryRaw<unknown[]>`SELECT 1 FROM organizations WHERE lower(handle) = lower(${data.handle})`;
+      if (taken.length || RESERVED_HANDLES.has(data.handle.toLowerCase())) {
+        throw new ConflictException('Ese identificador ya está en uso. Prueba con otro.');
+      }
+      if (await tx.users.findUnique({ where: { email }, select: { id: true } })) {
+        throw new ConflictException('Ese correo ya tiene una cuenta en PractiMesa. Usa otro o inicia sesión.');
+      }
+      const org = await tx.organizations.create({
+        data: {
+          name: data.business_name,
+          handle: data.handle,
+          nit: data.nit ?? null,
+          plan_tier: invitation.plan_tier,
+          max_locations: invitation.max_locations,
+        },
+      });
+      await tx.locations.create({ data: { organization_id: org.id, name: data.location_name, city: data.city, address: data.address } });
+      const user = await tx.users.create({
+        data: { organization_id: org.id, email, password_hash, full_name: data.owner_name, phone: data.phone, role: 'OWNER' },
+      });
+      // Conditional: of two sign-ups (or a sign-up and a revoke) with the same link, only one commits.
+      const { count } = await tx.invitations.updateMany({
+        where: { id: invitation.id, ...usable() },
+        data: { used_at: new Date(), organization_id: org.id },
+      });
+      if (!count) throw new NotFoundException(INVITATION_GONE);
+      return user.id;
+    });
+    return this.issue(userId);
   }
 
   /** Platform admin id (Q27); same error and timing as tenant login. */

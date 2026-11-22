@@ -20,6 +20,8 @@ interface AuthContextValue {
   login(email: string, password: string): Promise<void>;
   /** "Entrar como demo": session as the example organization's user of that role. */
   demoLogin(handle: string, role: Role): Promise<void>;
+  /** Sign-up with a platform invitation (Q28); ends logged in as the new owner. */
+  register(token: string, data: object): Promise<void>;
   logout(): Promise<void>;
   /** Location every request works on (x-location-id); MULTI users pick it in the header. */
   setLocation(id: string): void;
@@ -138,9 +140,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify(body),
       });
       if (!res.ok) {
-        // A suspended business (403) gets the API's explanation.
+        // The API's explanation (suspended business, handle taken…); screens decide when to show it.
         const message = ((await res.json().catch(() => null)) as { message?: unknown } | null)?.message;
-        throw new ApiError(res.status, res.status === 403 && typeof message === "string" ? message : undefined);
+        throw new ApiError(res.status, typeof message === "string" ? message : undefined);
       }
       store((await res.json()) as TokenResponse, refresh);
       await loadMe();
@@ -149,6 +151,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
   const login = useCallback((email: string, password: string) => start("/api/auth/login", { email, password }), [start]);
   const demoLogin = useCallback((handle: string, role: Role) => start("/api/auth/demo", { handle, role }), [start]);
+  const register = useCallback((token: string, data: object) => start(`/api/auth/register/${encodeURIComponent(token)}`, data), [start]);
 
   const setLocation = useCallback((id: string) => {
     location.current = id;
@@ -166,8 +169,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, me, login, demoLogin, logout, setLocation, reloadMe: loadMe, apiFetch }),
-    [status, me, login, demoLogin, logout, setLocation, loadMe, apiFetch],
+    () => ({ status, me, login, demoLogin, register, logout, setLocation, reloadMe: loadMe, apiFetch }),
+    [status, me, login, demoLogin, register, logout, setLocation, loadMe, apiFetch],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -218,6 +218,7 @@ model organizations {
   categories               categories[]
   customers                customers[]
   ingredients              ingredients[]
+  invitations              invitations[]
   locations                locations[]
   orders                   orders[]
   organization_credentials organization_credentials[]
@@ -289,6 +290,7 @@ model users {
   role                 String           @db.VarChar(30)
   allowed_location_ids String[]         @db.Uuid
   created_at           DateTime         @default(now()) @db.Timestamptz(6)
+  phone                String?          @db.VarChar(30)
   cash_registers       cash_registers[]
   refresh_tokens       refresh_tokens[]
   organizations        organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -364,9 +366,27 @@ model order_rounds {
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model platform_admins {
-  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  email         String   @db.VarChar(150)
+  id            String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email         String        @db.VarChar(150)
   password_hash String
-  full_name     String   @db.VarChar(120)
-  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  full_name     String        @db.VarChar(120)
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  invitations   invitations[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model invitations {
+  id              String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  token_hash      String           @unique
+  plan_tier       String           @db.VarChar(20)
+  max_locations   Int
+  note            String?          @db.VarChar(300)
+  created_by      String?          @db.Uuid
+  expires_at      DateTime         @db.Timestamptz(6)
+  used_at         DateTime?        @db.Timestamptz(6)
+  revoked_at      DateTime?        @db.Timestamptz(6)
+  organization_id String?          @db.Uuid
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  platform_admins platform_admins? @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  organizations   organizations?   @relation(fields: [organization_id], references: [id], onUpdate: NoAction)
 }

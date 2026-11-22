@@ -27,7 +27,7 @@ function messageFor(err: unknown): string {
     if (err.status === 401) return "Correo o contraseña incorrectos.";
     if (err.status === 429) return "Demasiados intentos. Espera un minuto e inténtalo de nuevo.";
     if (err.status === 400) return "Escribe tu correo y tu contraseña.";
-    if (err.detail) return err.detail;
+    if (err.detail && err.status < 500) return err.detail;
     return "Algo falló de nuestro lado. Inténtalo de nuevo en un momento.";
   }
   return "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.";

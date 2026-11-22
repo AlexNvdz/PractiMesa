@@ -1,8 +1,8 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Injectable, NotFoundException, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Injectable, NotFoundException, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { CookieOptions, Request, Response } from 'express';
-import { oneOf, parseBody } from '../common/validation';
-import { ACCESS_TTL_SECONDS, AuthService, REFRESH_TTL_MS, Tokens } from './auth.service';
+import { email, nullable, oneOf, parseBody, text } from '../common/validation';
+import { ACCESS_TTL_SECONDS, AuthService, DEMO_HANDLES, REFRESH_TTL_MS, Registration, Tokens } from './auth.service';
 
 export const REFRESH_COOKIE = 'pm_refresh';
 
@@ -15,8 +15,6 @@ export class LoginThrottlerGuard extends ThrottlerGuard {
   }
 }
 
-/** Demo organizations (Q13), fixed in code so demo login can never open a real business. */
-export const DEMO_HANDLES = ['cafe_ejemplo', 'cadena_ejemplo'];
 const DEMO_LOGIN = { handle: oneOf(...DEMO_HANDLES), role: oneOf('OWNER', 'ADMIN', 'CASHIER', 'WAITER', 'KITCHEN') };
 
 /** Demo login exists only where DEMO_LOGIN=on (staging); elsewhere the routes answer 404. */
@@ -54,6 +52,37 @@ export function parseLogin(body: unknown): { email: string; password: string } {
   return { email, password };
 }
 
+const REGISTRATION = {
+  handle: (v: unknown) => typeof v === 'string' && /^[A-Za-z0-9_]{3,30}$/.test(v),
+  business_name: text(150),
+  nit: nullable(text(30)),
+  owner_name: text(120),
+  email,
+  phone: text(30),
+  location_name: text(120),
+  city: text(80),
+  address: text(300),
+};
+
+/** Sign-up body; the password is read apart because parseBody trims strings and login does not. */
+function parseRegistration(body: unknown): Registration {
+  const data = parseBody<Omit<Registration, 'password'>>(body, REGISTRATION, [
+    'handle',
+    'business_name',
+    'owner_name',
+    'email',
+    'phone',
+    'location_name',
+    'city',
+    'address',
+  ]);
+  const { password } = body as { password?: unknown };
+  if (typeof password !== 'string' || password.length < 8 || password.length > 200) {
+    throw new BadRequestException('La contraseña debe tener al menos 8 caracteres');
+  }
+  return { ...data, password };
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
@@ -82,6 +111,19 @@ export class AuthController {
     requireDemo();
     const { handle, role } = parseBody<{ handle: string; role: string }>(body, DEMO_LOGIN, ['handle', 'role']);
     return this.respond(res, await this.auth.demoLogin(handle, role));
+  }
+
+  /** Sign-up page (Q28): plan of the invitation, 404 when it is not usable. */
+  @Get('register/:token')
+  invitation(@Param('token') token: string) {
+    return this.auth.invitation(token);
+  }
+
+  @Post('register/:token')
+  @HttpCode(200)
+  @UseGuards(LoginThrottlerGuard)
+  async register(@Param('token') token: string, @Body() body: unknown, @Res({ passthrough: true }) res: Response) {
+    return this.respond(res, await this.auth.register(token, parseRegistration(body)));
   }
 
   @Post('refresh')

@@ -4,6 +4,7 @@ import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { platformApi, type PlatformAdmin } from "@/components/platform/api";
 import { Businesses } from "@/components/platform/businesses";
+import { Invitations } from "@/components/platform/invitations";
 import { button, field } from "@/components/ui";
 import { ApiError } from "@/lib/auth";
 
@@ -21,6 +22,7 @@ function messageFor(err: unknown): string {
 export default function PlataformaPage() {
   const [admin, setAdmin] = useState<PlatformAdmin | null | undefined>(undefined);
   const endSession = useCallback(() => setAdmin(null), []);
+  const [section, setSection] = useState<"businesses" | "invitations">("businesses");
 
   useEffect(() => {
     platformApi<PlatformAdmin>("/me").then(setAdmin, () => setAdmin(null));
@@ -47,6 +49,24 @@ export default function PlataformaPage() {
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-5">
           <p className="text-xl font-semibold tracking-[-0.02em]">PractiMesa</p>
           <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">Plataforma</span>
+          <nav aria-label="Secciones" className="ml-4 flex gap-1">
+            {(
+              [
+                ["businesses", "Negocios"],
+                ["invitations", "Invitaciones"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-current={section === value ? "page" : undefined}
+                onClick={() => setSection(value)}
+                className="flex h-10 items-center rounded-control px-3 text-sm text-ink-2 transition-[background-color,color] duration-150 hover:bg-ground hover:text-ink aria-[current=page]:bg-accent-soft aria-[current=page]:font-medium aria-[current=page]:text-accent-strong"
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
           <span className="ml-auto hidden truncate text-sm text-muted sm:block">{admin.full_name}</span>
           <button type="button" onClick={() => void logout()} className={`${button.ghost} -mr-3`}>
             Salir
@@ -54,7 +74,7 @@ export default function PlataformaPage() {
         </div>
       </header>
       <main className="mx-auto max-w-5xl px-5 py-8">
-        <Businesses onSessionEnd={endSession} />
+        {section === "businesses" ? <Businesses onSessionEnd={endSession} /> : <Invitations onSessionEnd={endSession} />}
       </main>
     </div>
   );
