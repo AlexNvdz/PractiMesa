@@ -2,7 +2,7 @@
 -- Storefront subdomain = lower(handle) with _ -> - (no hyphen in handles, so no collisions).
 ALTER TABLE organizations RENAME COLUMN slug TO handle;
 ALTER TABLE organizations DROP CONSTRAINT organizations_slug_key;
-UPDATE organizations SET handle = replace(handle, '-', '_');
+UPDATE organizations SET handle = replace(handle, '-', '_') WHERE handle LIKE '%-%';
 ALTER TABLE organizations ALTER COLUMN handle TYPE VARCHAR(30);
 ALTER TABLE organizations ADD CONSTRAINT organizations_handle_check CHECK (handle ~ '^[A-Za-z0-9_]{3,30}$');
 CREATE UNIQUE INDEX organizations_handle_lower_key ON organizations (lower(handle));
