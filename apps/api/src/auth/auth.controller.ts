@@ -17,7 +17,7 @@ export class LoginThrottlerGuard extends ThrottlerGuard {
 
 /** Demo organizations (Q13), fixed in code so demo login can never open a real business. */
 export const DEMO_SLUGS = ['cafe-ejemplo', 'cadena-ejemplo'];
-const DEMO_LOGIN = { slug: oneOf(...DEMO_SLUGS), role: oneOf('OWNER', 'CASHIER', 'WAITER', 'KITCHEN') };
+const DEMO_LOGIN = { slug: oneOf(...DEMO_SLUGS), role: oneOf('OWNER', 'ADMIN', 'CASHIER', 'WAITER', 'KITCHEN') };
 
 /** Demo login exists only where DEMO_LOGIN=on (staging); elsewhere the routes answer 404. */
 function requireDemo() {

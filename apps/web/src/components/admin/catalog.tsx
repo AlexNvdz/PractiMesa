@@ -6,12 +6,9 @@ import { Dialog } from "@/components/dialog";
 import { button, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import type { Me } from "@/lib/auth";
-import { cop } from "@/lib/format";
+import { cop, fold } from "@/lib/format";
 import type { Category, LocationProduct, Product } from "@/lib/pos";
 import { ProductForm } from "./product-form";
-
-/** Accent- and case-insensitive match ("cafe" finds "Café"). */
-const fold = (text: string) => text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 /**
  * Catalog admin (OWNER/ADMIN): products grouped by category, with their price and availability at the

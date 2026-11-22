@@ -6,6 +6,14 @@ export const cop = (value: string | number) => COP.format(Number(value));
 /** Whole pesos typed in a money field ("$ 15.000" → 15000). */
 export const pesos = (text: string) => Number(text.replace(/\D/g, "")) || 0;
 
+const QTY = new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 });
+
+/** Stock quantity: "1.250", "0,5", "-250". The API sends quantities as decimal strings. */
+export const qty = (value: string | number) => QTY.format(Number(value));
+
+/** Accent- and case-insensitive match ("cafe" finds "Café"). */
+export const fold = (text: string) => text.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
 const TIME = new Intl.DateTimeFormat("es-CO", { hour: "numeric", minute: "2-digit", timeZone: "America/Bogota" });
 const DATE_TIME = new Intl.DateTimeFormat("es-CO", {
   day: "numeric",

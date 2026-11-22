@@ -88,7 +88,7 @@ describe('demo login', () => {
     expect(res.cookie).toHaveBeenCalledWith(REFRESH_COOKIE, 'refresh', expect.objectContaining({ httpOnly: true }));
   });
 
-  it.each([{ slug: 'un-cliente-real', role: 'OWNER' }, { slug: 'cafe-ejemplo', role: 'ADMIN' }, { slug: 'cafe-ejemplo' }, undefined])(
+  it.each([{ slug: 'un-cliente-real', role: 'OWNER' }, { slug: 'cafe-ejemplo', role: 'SUPERADMIN' }, { slug: 'cafe-ejemplo' }, undefined])(
     'rejects anything but a demo organization and role: %p',
     async (body) => {
       process.env.DEMO_LOGIN = 'on';

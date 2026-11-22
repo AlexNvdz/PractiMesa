@@ -14,6 +14,7 @@ interface DemoOrganization {
 
 const DEMO_ROLES: { role: Role; label: string }[] = [
   { role: "OWNER", label: "Dueño" },
+  { role: "ADMIN", label: "Admin" },
   { role: "CASHIER", label: "Cajero" },
   { role: "WAITER", label: "Mesero" },
   { role: "KITCHEN", label: "Cocina" },
@@ -188,14 +189,15 @@ export default function LoginPage() {
                     {org.name} · {org.plan_tier === "SINGLE" ? "1 sede" : "varias sedes"}
                   </p>
                 )}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Managers on the first row, the three staff roles on the second. */}
+                <div className="grid grid-cols-6 gap-2">
                   {DEMO_ROLES.map(({ role, label }) => (
                     <button
                       key={role}
                       type="button"
                       disabled={submitting}
                       onClick={() => void enterDemo(org.slug, role)}
-                      className={button.secondary}
+                      className={`${button.secondary} ${role === "OWNER" || role === "ADMIN" ? "col-span-3" : "col-span-2 px-2"}`}
                     >
                       {label}
                     </button>
