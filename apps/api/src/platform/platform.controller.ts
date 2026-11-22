@@ -1,9 +1,10 @@
 import { Body, ConflictException, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { CookieOptions, Request, Response } from 'express';
+import { randomBytes } from 'node:crypto';
 import { LoginThrottlerGuard, parseLogin } from '../auth/auth.controller';
-import { AuthService } from '../auth/auth.service';
-import { bool, int, oneOf, parseBody } from '../common/validation';
+import { AuthService, sha256 } from '../auth/auth.service';
+import { bool, int, nullable, oneOf, parseBody, text } from '../common/validation';
 import { PrismaService } from '../prisma/prisma.service';
 import { PLATFORM_AUDIENCE, PLATFORM_COOKIE, PlatformGuard } from './platform.guard';
 
@@ -27,6 +28,26 @@ const ORGANIZATION = {
 } as const;
 
 const UPDATE = { plan_tier: oneOf('SINGLE', 'MULTI'), max_locations: int(1, 5), suspended: bool };
+
+const INVITATION_TTL_MS = 24 * 60 * 60 * 1000;
+const INVITATION = {
+  id: true,
+  plan_tier: true,
+  max_locations: true,
+  note: true,
+  expires_at: true,
+  used_at: true,
+  revoked_at: true,
+  created_at: true,
+  organizations: { select: { name: true, handle: true } },
+} as const;
+const NEW_INVITATION = { plan_tier: oneOf('SINGLE', 'MULTI'), max_locations: int(1, 5), note: nullable(text(300)) };
+
+interface InvitationPlan {
+  plan_tier: string;
+  max_locations?: number;
+  note?: string | null;
+}
 
 /** SaaS owner panel (Q27). System path: platform admins are outside every tenant. */
 @Controller('platform')
@@ -90,5 +111,59 @@ export class PlatformController {
       else if (data.suspended) suspended_at ??= new Date();
       return tx.organizations.update({ where: { id }, data: { plan_tier: plan, max_locations: max, suspended_at }, select: ORGANIZATION });
     });
+  }
+
+  @Get('invitations')
+  @UseGuards(PlatformGuard)
+  invitations() {
+    // shortcut: latest 100 only; paginate when the platform sends more invitations than that.
+    return this.prisma.invitations.findMany({ select: INVITATION, orderBy: { created_at: 'desc' }, take: 100 });
+  }
+
+  /** One-time sign-up link (Q28). The token is returned only here; the DB keeps its hash. */
+  @Post('invitations')
+  @UseGuards(PlatformGuard)
+  invite(@Req() req: Request, @Body() body: unknown) {
+    return this.createInvitation(this.prisma, req.platformAdmin!.id, parseBody<InvitationPlan>(body, NEW_INVITATION, ['plan_tier']));
+  }
+
+  @Post('invitations/:id/revoke')
+  @HttpCode(200)
+  @UseGuards(PlatformGuard)
+  async revoke(@Param('id', ParseUUIDPipe) id: string) {
+    // Conditional, like the sign-up's: a link being used right now is not revoked under it.
+    await this.prisma.invitations.updateMany({ where: { id, used_at: null, revoked_at: null }, data: { revoked_at: new Date() } });
+    const invitation = await this.prisma.invitations.findUniqueOrThrow({ where: { id }, select: INVITATION });
+    if (invitation.used_at) throw new ConflictException('Esta invitación ya se usó: no se puede anular.');
+    return invitation;
+  }
+
+  /** Revokes the link (if still open) and issues a new one with the same plan and note. */
+  @Post('invitations/:id/regenerate')
+  @UseGuards(PlatformGuard)
+  regenerate(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const old = await tx.invitations.findUniqueOrThrow({ where: { id } });
+      const { count } = await tx.invitations.updateMany({ where: { id, used_at: null }, data: { revoked_at: old.revoked_at ?? new Date() } });
+      if (!count) throw new ConflictException('Esta invitación ya se usó: crea una nueva.');
+      return this.createInvitation(tx, req.platformAdmin!.id, old);
+    });
+  }
+
+  private async createInvitation(db: Pick<PrismaService, 'invitations'>, adminId: string, plan: InvitationPlan) {
+    const token = randomBytes(32).toString('base64url');
+    const invitation = await db.invitations.create({
+      data: {
+        token_hash: sha256(token),
+        plan_tier: plan.plan_tier,
+        // Q25: SINGLE = 1 always, MULTI starts at 3.
+        max_locations: plan.plan_tier === 'SINGLE' ? 1 : (plan.max_locations ?? 3),
+        note: plan.note ?? null,
+        created_by: adminId,
+        expires_at: new Date(Date.now() + INVITATION_TTL_MS),
+      },
+      select: INVITATION,
+    });
+    return { ...invitation, token };
   }
 }

@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AuthController, DEMO_HANDLES, DemoThrottlerGuard, LoginThrottlerGuard, readCookie, REFRESH_COOKIE } from './auth.controller';
+import { AuthController, DemoThrottlerGuard, LoginThrottlerGuard, readCookie, REFRESH_COOKIE } from './auth.controller';
+import { DEMO_HANDLES } from './auth.service';
 import type { AuthService } from './auth.service';
 
 const tokens = { accessToken: 'access', refreshToken: 'refresh' };

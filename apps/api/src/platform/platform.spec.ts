@@ -38,6 +38,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.organizations.deleteMany({ where: { id: { in: [single.id, multi.id] } } });
+  // Businesses created by the sign-up tests.
+  await db.organizations.deleteMany({ where: { handle: { startsWith: `Reg_${suffix}` } } });
+  await db.invitations.deleteMany({ where: { created_by: adminId } });
   await db.platform_admins.delete({ where: { id: adminId } });
   await db.$disconnect();
   await app.close();
@@ -128,5 +131,127 @@ describe('organization columns under RLS', () => {
     for (const data of [{ max_locations: 5, plan_tier: 'MULTI' }, { handle: 'otro_nombre' }, { suspended_at: null }]) {
       await expect(tenant.organizations.update({ where: { id: single.id }, data })).rejects.toThrow(/permission denied/);
     }
+  });
+});
+
+describe('invitations and sign-up', () => {
+  let n = 0;
+  const registration = (overrides: Record<string, unknown> = {}) => {
+    n += 1;
+    return {
+      handle: `Reg_${suffix}_${n}`,
+      business_name: 'Pizzería Darío',
+      nit: null,
+      owner_name: 'Darío Gómez',
+      email: `reg-${suffix}-${n}@test.demo`,
+      phone: '+57 300 000 0000',
+      password: ' una clave larga ',
+      location_name: 'Sede Centro',
+      city: 'Medellín',
+      address: 'Calle 10 #40-20',
+      ...overrides,
+    };
+  };
+  const invite = async (body: object = { plan_tier: 'MULTI', note: 'Cliente de prueba' }) => {
+    const res = await call('POST', '/platform/invitations', body);
+    expect(res.status).toBe(201);
+    return res.body as { id: string; token: string; plan_tier: string; max_locations: number };
+  };
+  const register = (token: string, body: object = registration()) => call('POST', `/auth/register/${token}`, body, {});
+
+  it('creates one-time links: SINGLE is 1 location, MULTI starts at 3, the token is shown once', async () => {
+    await expect(invite({ plan_tier: 'SINGLE', max_locations: 4 })).resolves.toMatchObject({ plan_tier: 'SINGLE', max_locations: 1 });
+    const multiInvite = await invite();
+    expect(multiInvite).toMatchObject({ max_locations: 3, note: 'Cliente de prueba', used_at: null, token: expect.stringMatching(/^[\w-]{43}$/) });
+    const listed = (await call('GET', '/platform/invitations')).body.find((i: { id: string }) => i.id === multiInvite.id);
+    expect(listed).not.toHaveProperty('token');
+    expect(listed).not.toHaveProperty('token_hash');
+    expect((await db.invitations.findUniqueOrThrow({ where: { id: multiInvite.id } })).token_hash).not.toBe(multiInvite.token);
+    expect((await call('POST', '/platform/invitations', { plan_tier: 'GOLD' })).status).toBe(400);
+    expect((await call('POST', '/platform/invitations', { plan_tier: 'MULTI' }, {})).status).toBe(401);
+  });
+
+  it('signs up business + first location + owner in one go, logs in and spends the link', async () => {
+    const { token } = await invite({ plan_tier: 'MULTI', max_locations: 4 });
+    await expect(call('GET', `/auth/register/${token}`, undefined, {})).resolves.toMatchObject({
+      status: 200,
+      body: { plan_tier: 'MULTI', max_locations: 4 },
+    });
+
+    const body = registration();
+    const res = await register(token, body);
+    expect(res.status).toBe(200);
+    expect(res.setCookie).toMatch(/^pm_refresh=.+HttpOnly; SameSite=Strict/);
+    const me = await fetch(`${base}/api/me`, { headers: { authorization: `Bearer ${res.body.access_token}` } }).then((r) => r.json());
+    expect(me).toMatchObject({
+      user: { full_name: 'Darío Gómez', email: body.email, role: 'OWNER' },
+      organization: { name: 'Pizzería Darío', handle: body.handle, plan_tier: 'MULTI', max_locations: 4 },
+      locations: [{ name: 'Sede Centro', city: 'Medellín' }],
+    });
+    const owner = await db.users.findUniqueOrThrow({ where: { email: body.email }, include: { organizations: true } });
+    expect(owner.phone).toBe('+57 300 000 0000');
+    expect(owner.organizations.nit).toBeNull();
+    // The password is kept as typed (spaces included), like login reads it.
+    expect((await call('POST', '/auth/login', { email: body.email, password: ' una clave larga ' }, {})).status).toBe(200);
+
+    expect((await call('GET', `/auth/register/${token}`, undefined, {})).status).toBe(404);
+    expect((await register(token)).status).toBe(404);
+    const used = (await call('GET', '/platform/invitations')).body.find(
+      (i: { organizations: { handle: string } | null }) => i.organizations?.handle === body.handle,
+    );
+    expect(used.used_at).toEqual(expect.any(String));
+  });
+
+  it('refuses a taken, reserved or invalid handle and a taken email, and the link stays usable', async () => {
+    const { token } = await invite();
+    const first = registration();
+    expect((await register((await invite()).token, first)).status).toBe(200);
+
+    for (const handle of [first.handle.toUpperCase(), 'App', 'cafe_ejemplo']) {
+      const res = await register(token, registration({ handle }));
+      expect(res.status).toBe(409);
+      expect(res.body.message).toContain('identificador');
+    }
+    const email = await register(token, registration({ email: first.email.toUpperCase() }));
+    expect(email.status).toBe(409);
+    expect(email.body.message).toContain('correo');
+    for (const bad of [{ handle: 'con-guion' }, { handle: '@arroba' }, { handle: 'ab' }, { password: 'corta' }, { address: ' ' }, { password: 1 }]) {
+      expect((await register(token, registration(bad))).status).toBe(400);
+    }
+    expect((await register(token)).status).toBe(200);
+  });
+
+  it('only one of two simultaneous sign-ups with the same link wins', async () => {
+    const { token } = await invite();
+    const results = await Promise.all([register(token), register(token)]);
+    expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([200, 404]);
+  });
+
+  it('expired, revoked and unknown links do not work', async () => {
+    const expired = await invite();
+    await db.invitations.update({ where: { id: expired.id }, data: { expires_at: new Date(Date.now() - 1000) } });
+    expect((await register(expired.token)).status).toBe(404);
+    expect((await call('GET', '/auth/register/no-existe', undefined, {})).body.message).toContain('Pídele una nueva');
+
+    const revoked = await invite();
+    await expect(call('POST', `/platform/invitations/${revoked.id}/revoke`)).resolves.toMatchObject({
+      status: 200,
+      body: { revoked_at: expect.any(String) },
+    });
+    expect((await register(revoked.token)).status).toBe(404);
+  });
+
+  it('regenerates a link with the same plan and revokes the old one; a used link can be neither', async () => {
+    const old = await invite({ plan_tier: 'MULTI', max_locations: 5, note: 'Regenerar' });
+    const res = await call('POST', `/platform/invitations/${old.id}/regenerate`);
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ plan_tier: 'MULTI', max_locations: 5, note: 'Regenerar', revoked_at: null });
+    expect(res.body.token).not.toBe(old.token);
+    expect((await register(old.token)).status).toBe(404);
+    expect((await register(res.body.token)).status).toBe(200);
+
+    expect((await call('POST', `/platform/invitations/${res.body.id}/revoke`)).status).toBe(409);
+    expect((await call('POST', `/platform/invitations/${res.body.id}/regenerate`)).status).toBe(409);
+    expect((await call('POST', `/platform/invitations/${randomUUID()}/revoke`)).status).toBe(404);
   });
 });
