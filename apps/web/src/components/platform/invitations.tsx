@@ -4,11 +4,12 @@ import { Check, Copy, LoaderCircle, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { useNow } from "@/components/pos/service";
-import { button, choice, field } from "@/components/ui";
+import { button, field } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { ApiError } from "@/lib/auth";
 import { dateTime } from "@/lib/format";
 import { PLAN_LABEL, platformApi } from "./api";
+import { PlanFields } from "./plan-fields";
 
 interface Invitation {
   id: string;
@@ -167,31 +168,7 @@ function InvitationForm({ onCreated }: { onCreated: (invitation: Created) => voi
 
   return (
     <form onSubmit={submit} noValidate className="space-y-5">
-      <fieldset>
-        <legend className={labelClass}>Plan</legend>
-        <div className="grid grid-cols-2 gap-2">
-          {(["SINGLE", "MULTI"] as const).map((value) => (
-            <label key={value} className={choice}>
-              <input type="radio" name="plan" checked={plan === value} onChange={() => setPlan(value)} className="sr-only" />
-              {PLAN_LABEL[value]}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-      {plan === "MULTI" ? (
-        <label className="block">
-          <span className={labelClass}>Tope de sedes</span>
-          <select value={max} onChange={(e) => setMax(Number(e.target.value))} className={`${field} figures`}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n}>
-                {n} {n === 1 ? "sede" : "sedes"}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <p className="text-sm text-muted">El plan {PLAN_LABEL.SINGLE} siempre tiene 1 sede.</p>
-      )}
+      <PlanFields plan={plan} onPlan={setPlan} max={max} onMax={setMax} />
       <label className="block">
         <span className={labelClass}>Nota interna</span>
         <input

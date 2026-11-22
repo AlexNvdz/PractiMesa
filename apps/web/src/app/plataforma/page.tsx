@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertCircle, LoaderCircle } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { platformApi, type PlatformAdmin } from "@/components/platform/api";
 import { Businesses } from "@/components/platform/businesses";
 import { Invitations } from "@/components/platform/invitations";
+import { FormAlert } from "@/components/form-alert";
 import { button, field } from "@/components/ui";
 import { ApiError } from "@/lib/auth";
 
@@ -136,16 +137,7 @@ function PlatformLogin({ onLogin }: { onLogin: (admin: PlatformAdmin) => void })
                 {...invalid}
               />
             </label>
-            {error && (
-              <p
-                id={errorId}
-                role="alert"
-                className="flex items-start gap-2 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger"
-              >
-                <AlertCircle size={16} strokeWidth={2.25} className="mt-0.5 shrink-0" aria-hidden />
-                {error}
-              </p>
-            )}
+            {error && <FormAlert id={errorId}>{error}</FormAlert>}
             <button type="submit" disabled={submitting} className={`${button.primary} w-full`}>
               {submitting && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
               {submitting ? "Entrando…" : "Entrar"}

@@ -8,6 +8,7 @@ import { errorMessage } from "@/lib/api";
 import { ApiError } from "@/lib/auth";
 import { fold } from "@/lib/format";
 import { type Organization, PLAN_LABEL, platformApi } from "./api";
+import { PlanFields } from "./plan-fields";
 
 type Filter = "ALL" | "SINGLE" | "MULTI" | "SUSPENDED";
 
@@ -17,7 +18,6 @@ const DATE = new Intl.DateTimeFormat("es-CO", {
   year: "numeric",
   timeZone: "America/Bogota",
 });
-const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
 
 /** Businesses by plan and state (Q27): change plan and location limit, suspend and reactivate. */
 export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
@@ -172,33 +172,7 @@ function BusinessForm({ org, onSaved }: { org: Organization; onSaved: (org: Orga
         {org.nit && ` · NIT ${org.nit}`} · {locations === 1 ? "1 sede creada" : `${locations} sedes creadas`}
       </p>
 
-      <fieldset>
-        <legend className={labelClass}>Plan</legend>
-        <div className="grid grid-cols-2 gap-2">
-          {(["SINGLE", "MULTI"] as const).map((value) => (
-            <label key={value} className={choice}>
-              <input type="radio" name="plan" checked={plan === value} onChange={() => setPlan(value)} className="sr-only" />
-              {PLAN_LABEL[value]}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      {plan === "MULTI" ? (
-        <label className="block">
-          <span className={labelClass}>Tope de sedes</span>
-          <select value={max} onChange={(e) => setMax(Number(e.target.value))} className={`${field} figures`}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <option key={n} value={n} disabled={n < locations}>
-                {n} {n === 1 ? "sede" : "sedes"}
-                {n < locations ? " (tiene más)" : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <p className="text-sm text-muted">El plan {PLAN_LABEL.SINGLE} siempre tiene 1 sede.</p>
-      )}
+      <PlanFields plan={plan} onPlan={setPlan} max={max} onMax={setMax} locations={locations} />
 
       {error && (
         <p role="alert" className="rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">

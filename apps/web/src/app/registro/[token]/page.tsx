@@ -1,8 +1,9 @@
 "use client";
 
-import { AlertCircle, LoaderCircle } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
+import { FormAlert } from "@/components/form-alert";
 import { button, field } from "@/components/ui";
 import { ApiError, useAuth } from "@/lib/auth";
 
@@ -196,16 +197,7 @@ export default function RegistroPage() {
                 </div>
               </fieldset>
 
-              {error && (
-                <p
-                  id={errorId}
-                  role="alert"
-                  className="flex items-start gap-2 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger"
-                >
-                  <AlertCircle size={16} strokeWidth={2.25} className="mt-0.5 shrink-0" aria-hidden />
-                  {error}
-                </p>
-              )}
+              {error && <FormAlert id={errorId}>{error}</FormAlert>}
 
               <button type="submit" disabled={submitting} className={`${button.primary} w-full`}>
                 {submitting && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
