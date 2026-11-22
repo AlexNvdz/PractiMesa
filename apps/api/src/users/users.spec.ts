@@ -103,11 +103,10 @@ describe('team (owner)', () => {
     expect((await asWorker('GET', '/me')).status).toBe(200);
   });
 
-  it('the owner is not on the team: its data changes only in Mi cuenta', async () => {
+  it('the owner is listed but its data changes only in Mi cuenta', async () => {
     const owner = await client(app, multi.users.OWNER);
     const listed = (await owner('GET', '/users')).body as { id: string; role: string }[];
-    expect(listed.some((u) => u.role === 'OWNER')).toBe(false);
-    expect(listed.map((u) => u.id)).toContain(multi.users.ADMIN);
+    expect(listed.map((u) => u.id)).toEqual(expect.arrayContaining([multi.users.OWNER, multi.users.ADMIN]));
     for (const body of [{ given_names: 'Otra' }, { role: 'ADMIN' }, { is_active: false }]) {
       const res = await owner('PATCH', `/users/${multi.users.OWNER}`, body);
       expect(res.status).toBe(403);

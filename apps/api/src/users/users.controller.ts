@@ -62,7 +62,7 @@ type Row = { pin_hash: string | null } & Record<string, unknown>;
 const view = ({ pin_hash, ...user }: Row) => ({ ...user, has_pin: pin_hash !== null });
 
 /**
- * Team: only the owner creates and edits people (supervisors included). The owner is not on the list:
+ * Team: only the owner creates and edits people (supervisors included). The owner is listed first but
  * its own data changes only in "Mi cuenta" (/api/me).
  */
 @Controller('users')
@@ -74,7 +74,7 @@ export class UsersController {
   async list(@Req() req: Request) {
     const users = await this.prisma
       .forTenant(req.tenant!.organizationId)
-      .users.findMany({ where: { role: { not: 'OWNER' } }, select: USER, orderBy: [{ is_active: 'desc' }, { full_name: 'asc' }] });
+      .users.findMany({ select: USER, orderBy: [{ is_active: 'desc' }, { full_name: 'asc' }] });
     return users.map(view);
   }
 

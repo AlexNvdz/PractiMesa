@@ -1,6 +1,7 @@
 "use client";
 
-import { LoaderCircle, Plus } from "lucide-react";
+import { ChevronRight, LoaderCircle, Plus } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { FormAlert } from "@/components/form-alert";
@@ -38,7 +39,10 @@ function suggestUsername(given: string, family: string, taken: Set<string>) {
   return name;
 }
 
-/** Team (owner only): the people the owner created, their role, locations and PIN. The owner edits itself in Mi cuenta. */
+/**
+ * Team (owner only): people of the selected location (MULTI: those assigned there or to every location),
+ * with the owner first; the owner edits itself in Mi cuenta.
+ */
 export function Team({ me }: { me: Me }) {
   const api = useApi();
   const [users, setUsers] = useState<User[] | null>(null);
@@ -64,6 +68,12 @@ export function Team({ me }: { me: Me }) {
   }
 
   const user = editing === "new" ? undefined : (editing ?? undefined);
+  const here = me.current_location_id;
+  const location = me.locations.find((l) => l.id === here);
+  const shown = users
+    .filter((u) => !multi || u.role === "OWNER" || !u.allowed_location_ids.length || (here && u.allowed_location_ids.includes(here)))
+    .sort((a, b) => Number(b.role === "OWNER") - Number(a.role === "OWNER"));
+  const active = shown.filter((u) => u.is_active).length;
   const where = (u: User) =>
     u.allowed_location_ids.length ? u.allowed_location_ids.map((id) => locationName.get(id) ?? "Otra sede").join(", ") : "Todas las sedes";
 
@@ -71,7 +81,8 @@ export function Team({ me }: { me: Me }) {
     <div>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <p className="figures text-sm text-muted">
-          {users.filter((u) => u.is_active).length} {users.filter((u) => u.is_active).length === 1 ? "persona activa" : "personas activas"}
+          {active} {active === 1 ? "persona activa" : "personas activas"}
+          {multi && location && ` en ${location.name}`}
         </p>
         <button type="button" onClick={() => setEditing("new")} className={`${button.primary} ml-auto pl-3.5`}>
           <Plus size={18} strokeWidth={2.25} aria-hidden />
@@ -80,11 +91,14 @@ export function Team({ me }: { me: Me }) {
       </div>
 
       <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
-        {users.map((u) => {
+        {shown.map((u) => {
           const content = (
             <>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-medium">{u.full_name}</span>
+                <span className="block truncate text-[15px] font-medium">
+                  {u.full_name}
+                  {u.id === me.user.id && <span className="font-normal text-muted"> (tú)</span>}
+                </span>
                 <span className="block truncate text-sm text-muted">
                   {ROLE_LABEL[u.role]}
                   {u.username && ` · ${u.username}`}
@@ -93,18 +107,27 @@ export function Team({ me }: { me: Me }) {
                 </span>
               </span>
               {!u.is_active && <span className={`${badge} bg-ground text-muted`}>Inactivo</span>}
-              {u.is_active && !u.has_pin && <span className={`${badge} bg-warning-soft text-warning`}>Sin PIN</span>}
+              {u.is_active && u.role !== "OWNER" && !u.has_pin && <span className={`${badge} bg-warning-soft text-warning`}>Sin PIN</span>}
             </>
           );
+          const row =
+            "flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground";
           return (
-            <li key={u.id}>
-              <button
-                type="button"
-                onClick={() => setEditing(u)}
-                className="flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground"
-              >
-                {content}
-              </button>
+            <li key={u.id} className="first:rounded-t-panel last:rounded-b-panel">
+              {u.role === "OWNER" ? (
+                // The owner's own data lives in Mi cuenta, not in this form.
+                <Link href="/mi-cuenta" className={row}>
+                  {content}
+                  <span className="flex shrink-0 items-center gap-1 text-sm text-muted">
+                    Mi cuenta
+                    <ChevronRight size={16} aria-hidden />
+                  </span>
+                </Link>
+              ) : (
+                <button type="button" onClick={() => setEditing(u)} className={row}>
+                  {content}
+                </button>
+              )}
             </li>
           );
         })}
@@ -136,7 +159,10 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
   // The username follows the names until the person edits it (Q30).
   const [usernameTouched, setUsernameTouched] = useState(Boolean(user?.username));
   const [role, setRole] = useState<Role>(user?.role ?? "CASHIER");
-  const [locations, setLocations] = useState<string[]>(user?.allowed_location_ids ?? []);
+  // A new person starts at the location being viewed (MULTI); "Todas las sedes" stays one click away.
+  const [locations, setLocations] = useState<string[]>(
+    user?.allowed_location_ids ?? (multi && me.current_location_id ? [me.current_location_id] : []),
+  );
   const [pin, setPin] = useState("");
   const [active, setActive] = useState(user?.is_active ?? true);
   const [busy, setBusy] = useState(false);
