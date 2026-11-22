@@ -25,7 +25,8 @@ const decimal = (text: string) => (text.trim() ? Number(text.replace(",", ".")) 
 const same = (a: string, b: string) => fold(a.trim()) === fold(b.trim());
 
 /**
- * Inventory: ingredients (organization-wide) with their stock and alert minimum at the current location.
+ * Inventory: ingredients (organization-wide) with their stock and alert minimum at the current location,
+ * leaving out those only other locations use (Q43).
  * Sales deduct stock by recipe when an order is paid. OWNER/ADMIN manage ingredients; cashiers only receive
  * goods and count stock (Q39).
  */
@@ -44,7 +45,7 @@ export function Inventory({ me }: { me: Me }) {
   useEffect(() => {
     void (async () => {
       try {
-        const [all, here] = await Promise.all([api<Ingredient[]>("/ingredients"), api<LocationStock[]>("/location-stock")]);
+        const [all, here] = await Promise.all([api<Ingredient[]>("/ingredients?here=1"), api<LocationStock[]>("/location-stock")]);
         setIngredients(all);
         setStock(Object.fromEntries(here.map((s) => [s.ingredient_id, s])));
       } catch (err) {

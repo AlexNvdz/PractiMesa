@@ -61,13 +61,14 @@ export function pickModifiers(schema: ModifierGroup[], picks: ModifierPick[]) {
  */
 export async function priceItems(tx: Prisma.TransactionClient, locationId: string, items: ItemInput[]) {
   const products = await tx.products.findMany({
-    where: { id: { in: items.map((i) => i.product_id) }, is_active: true },
+    // Chain products and this location's own ones (Q43); another location's own product is not sold here.
+    where: { id: { in: items.map((i) => i.product_id) }, is_active: true, OR: [{ location_id: null }, { location_id: locationId }] },
     include: { location_products: { where: { location_id: locationId } } },
   });
   return items.map((item) => {
     const product = products.find((p) => p.id === item.product_id);
     const local = product?.location_products[0];
-    if (!product || local?.is_available === false) throw new BadRequestException('Producto no disponible en esta sede');
+    if (!product || local?.is_available === false || local?.is_listed === false) throw new BadRequestException('Producto no disponible en esta sede');
     const modifiers = pickModifiers(product.modifiers_schema as unknown as ModifierGroup[], item.modifiers);
     const base = new Prisma.Decimal(local?.custom_price_cop ?? product.base_price_cop);
     return {

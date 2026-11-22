@@ -38,6 +38,8 @@ export interface Product {
   description: string | null;
   modifiers_schema: ModifierGroup[];
   is_active: boolean;
+  /** Set = product of that location only; null = chain product (Q43). */
+  location_id: string | null;
 }
 
 export interface Ingredient {
@@ -62,6 +64,8 @@ export interface LocationProduct {
   product_id: string;
   custom_price_cop: string | null;
   is_available: boolean;
+  /** false = this location never sells it (permanent); is_available = false is "sold out today". */
+  is_listed: boolean;
 }
 
 /** A product as this location sells it. */

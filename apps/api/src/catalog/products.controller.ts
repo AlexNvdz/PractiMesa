@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { Roles } from '../common/guards/roles.guard';
+import { requireLocation } from '../common/tenant/tenant-context';
 import { bool, MAX_COP, MAX_QTY, modifiersSchema, nullable, num, parseBody, text, url, uuid } from '../common/validation';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -32,7 +33,10 @@ const PRODUCT = {
 const RECIPE_ITEM = { ingredient_id: uuid, quantity_required: num(0.001, MAX_QTY) };
 const WITH_INGREDIENT = { ingredients: { select: { name: true, unit: true } } } as const;
 
-/** Master catalog (organization-wide). Per-location price and availability live in location_products. */
+/**
+ * Master catalog (organization-wide). Per-location price and availability live in location_products.
+ * A product created with only_here belongs to the request location only (Q43).
+ */
 @Controller('products')
 export class ProductsController {
   constructor(private readonly prisma: PrismaService) {}
@@ -45,8 +49,15 @@ export class ProductsController {
   @Post()
   @Roles('OWNER', 'ADMIN')
   create(@Req() req: Request, @Body() body: unknown) {
-    const data = parseBody<Prisma.productsUncheckedCreateInput>(body, PRODUCT, ['name', 'base_price_cop']);
-    return this.prisma.forTenant(req.tenant!.organizationId).products.create({ data });
+    const tenant = req.tenant!;
+    const { only_here, ...data } = parseBody<Prisma.productsUncheckedCreateInput & { only_here?: boolean }>(
+      body,
+      { ...PRODUCT, only_here: bool },
+      ['name', 'base_price_cop'],
+    );
+    // The location comes from the request (x-location-id, already checked), never from the body.
+    if (only_here) data.location_id = requireLocation(tenant);
+    return this.prisma.forTenant(tenant.organizationId).products.create({ data });
   }
 
   @Patch(':id')

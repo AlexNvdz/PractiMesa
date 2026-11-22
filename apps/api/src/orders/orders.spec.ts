@@ -106,6 +106,20 @@ describe('pricing', () => {
     expect(res.status).toBe(400);
   });
 
+  it('sells only chain products listed here and this location own products (Q43)', async () => {
+    const org = { organization_id: orgA.id };
+    const loc1 = orgA.locations[0];
+    const own1 = (await db.products.create({ data: { ...org, name: 'Solo sede 1', base_price_cop: 5000, location_id: loc1 } })).id;
+    const tea = (await db.products.create({ data: { ...org, name: 'Té', base_price_cop: 4000 } })).id;
+    await db.location_products.create({ data: { ...org, location_id: orgA.locations[1], product_id: tea, is_listed: false } });
+    const pickup = (call: Call, product_id: string) => call('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id, quantity: 1 }] });
+
+    expect((await pickup(cashier1, own1)).status).toBe(201);
+    expect((await pickup(admin2, own1)).status).toBe(400);
+    expect((await pickup(cashier1, tea)).status).toBe(201);
+    expect((await pickup(admin2, tea)).status).toBe(400);
+  });
+
   it('rejects invalid modifiers, products and bodies', async () => {
     const order = (items: unknown) => cashier1('POST', '/orders', { order_type: 'PICKUP', items });
     const pick = (...m: [string, string][]) => [{ product_id: latte, quantity: 1, modifiers: m.map(([group, option]) => ({ group, option })) }];

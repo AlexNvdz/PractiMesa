@@ -111,7 +111,8 @@ export function Service({ me }: { me: Me }) {
         setCategories(cats);
         setMenu(
           products
-            .filter((p) => p.is_active)
+            // Chain products this location lists, plus its own ones (Q43).
+            .filter((p) => p.is_active && (!p.location_id || p.location_id === me.current_location_id) && byProduct.get(p.id)?.is_listed !== false)
             .map((p) => {
               const here = byProduct.get(p.id);
               return {
@@ -128,7 +129,7 @@ export function Service({ me }: { me: Me }) {
         setLoadError(errorMessage(err));
       }
     })();
-  }, [api]);
+  }, [api, me.current_location_id]);
 
   useLive(
     () => void loadService(),

@@ -260,3 +260,47 @@ describe('per-location prices, availability and stock', () => {
     expect((await cashier('DELETE', `/ingredients/${ingredientId}`)).status).toBe(403);
   });
 });
+
+describe('catalog per location (Q43)', () => {
+  it('creates a product of the request location only with only_here', async () => {
+    const loc1 = await client(app, orgA.users.ADMIN, orgA.locations[0]);
+    const own = await loc1('POST', '/products', { name: 'Arepa de la casa', base_price_cop: 7000, only_here: true });
+    expect(own.status).toBe(201);
+    expect(own.body).toMatchObject({ location_id: orgA.locations[0] });
+    expect(own.body).not.toHaveProperty('only_here');
+    expect((await loc1('POST', '/products', { name: 'Café de la cadena', base_price_cop: 3000 })).body.location_id).toBeNull();
+    // The location never comes from the body (dropped by the whitelist), and only_here needs a request location.
+    expect((await loc1('POST', '/products', { name: 'x', base_price_cop: 1, location_id: orgA.locations[1] })).body.location_id).toBeNull();
+    expect((await adminA('POST', '/products', { name: 'x', base_price_cop: 1, only_here: true })).status).toBe(400);
+  });
+
+  it('lists only the ingredients a location works with', async () => {
+    const loc1 = await client(app, orgA.users.ADMIN, orgA.locations[0]);
+    const loc2 = await client(app, orgA.users.ADMIN, orgA.locations[1]);
+    const ingredient = async (name: string) => (await loc1('POST', '/ingredients', { name, unit: 'gr' })).body.id as string;
+    const product = async (name: string, ingredientIds: string[], only_here = false) => {
+      const id = (await loc1('POST', '/products', { name, base_price_cop: 1000, only_here })).body.id as string;
+      await loc1('PUT', `/products/${id}/recipe`, ingredientIds.map((ingredient_id) => ({ ingredient_id, quantity_required: 1 })));
+      return id;
+    };
+    const ownOnly = await ingredient('Q43 solo sede 1');
+    const stocked = await ingredient('Q43 con stock en sede 2');
+    const unlisted = await ingredient('Q43 de producto no listado');
+    const shared = await ingredient('Q43 de la cadena');
+    await ingredient('Q43 sin receta');
+    await product('Q43 propio', [ownOnly, stocked], true);
+    const dropped = await product('Q43 no se vende en sede 2', [unlisted]);
+    await product('Q43 cadena', [shared]);
+
+    const res = await loc2('PUT', `/location-products/${dropped}`, { is_listed: false });
+    expect(res.body).toMatchObject({ is_listed: false, is_available: true });
+    await loc2('POST', `/location-stock/${stocked}/receive`, { qty: 10 });
+
+    const names = async (call: Call, query = '?here=1') =>
+      ((await call('GET', `/ingredients${query}`)).body as { name: string }[]).map((i) => i.name).filter((n) => n.startsWith('Q43'));
+    expect(await names(loc2)).toEqual(['Q43 con stock en sede 2', 'Q43 de la cadena', 'Q43 sin receta']);
+    expect(await names(loc1)).toHaveLength(5);
+    expect(await names(loc2, '')).toHaveLength(5);
+    expect((await adminA('GET', '/ingredients?here=1')).status).toBe(400);
+  });
+});
