@@ -1,12 +1,15 @@
 import { ForbiddenException, Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { NextFunction, Request, Response } from 'express';
+import { SUSPENDED } from '../../auth/auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { PlanTier, Role } from './tenant-context';
 import './tenant-context';
 
 interface JwtClaims {
   sub: string;
+  /** Only platform tokens carry an audience; they never open the tenant API. */
+  aud?: string;
 }
 
 /**
@@ -31,6 +34,7 @@ export class TenantMiddleware implements NestMiddleware {
     } catch {
       throw new UnauthorizedException();
     }
+    if (claims.aud) throw new UnauthorizedException();
 
     const user = await this.prisma.users.findUnique({
       where: { id: claims.sub },
@@ -43,6 +47,7 @@ export class TenantMiddleware implements NestMiddleware {
             id: true,
             plan_tier: true,
             max_locations: true,
+            suspended_at: true,
             locations: { where: { is_active: true }, select: { id: true } },
           },
         },
@@ -51,6 +56,7 @@ export class TenantMiddleware implements NestMiddleware {
     if (!user) throw new UnauthorizedException();
 
     const org = user.organizations;
+    if (org.suspended_at) throw new ForbiddenException(SUSPENDED);
     const orgLocationIds = org.locations.map((l) => l.id);
     // Empty allowed_location_ids = every location of the org (Prisma reads SQL NULL as []).
     const allowed = user.allowed_location_ids;

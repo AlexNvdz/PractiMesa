@@ -25,7 +25,7 @@ const order = (organizationId: string, locationId: string) => ({
 
 beforeAll(async () => {
   const newOrg = (name: string) =>
-    db.organizations.create({ data: { name, slug: `${name}-${suffix}`, plan_tier: 'MULTI', max_locations: 3 } });
+    db.organizations.create({ data: { name, handle: `${name.replace("-", "_")}_${suffix}`, plan_tier: 'MULTI', max_locations: 3 } });
   orgA = (await newOrg('test-a')).id;
   orgB = (await newOrg('test-b')).id;
 

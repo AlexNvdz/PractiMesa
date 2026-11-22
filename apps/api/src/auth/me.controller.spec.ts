@@ -11,7 +11,7 @@ let userId: string;
 let locationId: string;
 
 beforeAll(async () => {
-  orgId = (await db.organizations.create({ data: { name: 'Me test', slug: `me-${suffix}`, plan_tier: 'SINGLE' } })).id;
+  orgId = (await db.organizations.create({ data: { name: 'Me test', handle: `me_${suffix}`, plan_tier: 'SINGLE' } })).id;
   locationId = (
     await db.locations.create({ data: { organization_id: orgId, name: 'Centro', city: 'Cali', address: 'Calle 5' } })
   ).id;
@@ -34,7 +34,7 @@ it('returns the session user, organization and allowed locations', async () => {
 
   await expect(new MeController(db).me(req)).resolves.toEqual({
     user: { id: userId, full_name: 'Ana', email: `me-${suffix}@test.demo`, role: 'CASHIER' },
-    organization: { id: orgId, name: 'Me test', slug: `me-${suffix}`, plan_tier: 'SINGLE', max_locations: 1 },
+    organization: { id: orgId, name: 'Me test', handle: `me_${suffix}`, plan_tier: 'SINGLE', max_locations: 1 },
     locations: [{ id: locationId, name: 'Centro', city: 'Cali' }],
     current_location_id: locationId,
   });

@@ -202,10 +202,11 @@ model orders {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model organizations {
   id                       String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   name                     String                     @db.VarChar(150)
-  slug                     String                     @unique @db.VarChar(80)
+  handle                   String                     @db.VarChar(30)
   nit                      String?                    @db.VarChar(30)
   plan_tier                String                     @db.VarChar(20)
   max_locations            Int                        @default(1)
@@ -213,6 +214,7 @@ model organizations {
   factus_config            Json                       @default("{\"sandbox\": true, \"client_id\": null, \"numbering_range_id\": null}")
   ai_agent_enabled         Boolean                    @default(false)
   created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  suspended_at             DateTime?                  @db.Timestamptz(6)
   categories               categories[]
   customers                customers[]
   ingredients              ingredients[]
@@ -358,4 +360,13 @@ model order_rounds {
 
   @@unique([order_id, round, organization_id], map: "order_rounds_order_round_key")
   @@index([organization_id, status], map: "idx_order_rounds_org_status")
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model platform_admins {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email         String   @db.VarChar(150)
+  password_hash String
+  full_name     String   @db.VarChar(120)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
 }
