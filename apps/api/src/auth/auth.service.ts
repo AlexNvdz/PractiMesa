@@ -11,6 +11,8 @@ const REUSE_GRACE_MS = 30 * 1000;
 
 /** Shown when the platform suspended the business (Q27). */
 export const SUSPENDED = 'Este negocio está suspendido. Escríbenos para reactivarlo.';
+/** Shown when the owner or an admin deactivated the user. */
+export const DEACTIVATED = 'Tu usuario está desactivado. Habla con el encargado del negocio.';
 
 export const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
 
@@ -168,10 +170,14 @@ export class AuthService {
     return admin.id;
   }
 
-  // Login, demo login and refresh all pass here, so a suspended business gets no new session.
+  // Login, demo login, sign-up and refresh all pass here, so a suspended business or deactivated user gets no new session.
   private async issue(userId: string): Promise<Tokens> {
-    const user = await this.prisma.users.findUnique({ where: { id: userId }, select: { organizations: { select: { suspended_at: true } } } });
+    const user = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { is_active: true, organizations: { select: { suspended_at: true } } },
+    });
     if (user?.organizations.suspended_at) throw new ForbiddenException(SUSPENDED);
+    if (user && !user.is_active) throw new ForbiddenException(DEACTIVATED);
     const refreshToken = randomBytes(32).toString('base64url');
     await this.prisma.refresh_tokens.create({
       data: { user_id: userId, token_hash: sha256(refreshToken), expires_at: new Date(Date.now() + REFRESH_TTL_MS) },

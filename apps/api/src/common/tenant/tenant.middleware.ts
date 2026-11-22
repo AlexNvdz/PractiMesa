@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { NextFunction, Request, Response } from 'express';
-import { SUSPENDED } from '../../auth/auth.service';
+import { DEACTIVATED, SUSPENDED } from '../../auth/auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { PlanTier, Role } from './tenant-context';
 import './tenant-context';
@@ -41,6 +41,7 @@ export class TenantMiddleware implements NestMiddleware {
       select: {
         id: true,
         role: true,
+        is_active: true,
         allowed_location_ids: true,
         organizations: {
           select: {
@@ -57,6 +58,7 @@ export class TenantMiddleware implements NestMiddleware {
 
     const org = user.organizations;
     if (org.suspended_at) throw new ForbiddenException(SUSPENDED);
+    if (!user.is_active) throw new ForbiddenException(DEACTIVATED);
     const orgLocationIds = org.locations.map((l) => l.id);
     // Empty allowed_location_ids = every location of the org (Prisma reads SQL NULL as []).
     const allowed = user.allowed_location_ids;
