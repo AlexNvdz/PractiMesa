@@ -37,5 +37,6 @@ it('returns the session user, organization and allowed locations', async () => {
     organization: { id: orgId, name: 'Me test', handle: `me_${suffix}`, plan_tier: 'SINGLE', max_locations: 1 },
     locations: [{ id: locationId, name: 'Centro', city: 'Cali' }],
     current_location_id: locationId,
+    device: null,
   });
 });

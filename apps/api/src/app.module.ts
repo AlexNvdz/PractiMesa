@@ -31,6 +31,7 @@ import { PlatformController } from './platform/platform.controller';
 import { PlatformGuard } from './platform/platform.guard';
 import { PrismaService } from './prisma/prisma.service';
 import { UsersController } from './users/users.controller';
+import { DevicesController } from './devices/devices.controller';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { UsersController } from './users/users.controller';
     LiveController,
     PlatformController,
     UsersController,
+    DevicesController,
   ],
   providers: [
     PrismaService,

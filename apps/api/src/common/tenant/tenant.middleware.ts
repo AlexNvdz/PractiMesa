@@ -10,6 +10,8 @@ interface JwtClaims {
   sub: string;
   /** Only platform tokens carry an audience; they never open the tenant API. */
   aud?: string;
+  /** Device of a PIN session (Q33). */
+  dev?: string;
 }
 
 /**
@@ -36,25 +38,30 @@ export class TenantMiddleware implements NestMiddleware {
     }
     if (claims.aud) throw new UnauthorizedException();
 
-    const user = await this.prisma.users.findUnique({
-      where: { id: claims.sub },
-      select: {
-        id: true,
-        role: true,
-        is_active: true,
-        allowed_location_ids: true,
-        organizations: {
-          select: {
-            id: true,
-            plan_tier: true,
-            max_locations: true,
-            suspended_at: true,
-            locations: { where: { is_active: true }, select: { id: true } },
+    const [user, device] = await Promise.all([
+      this.prisma.users.findUnique({
+        where: { id: claims.sub },
+        select: {
+          id: true,
+          role: true,
+          is_active: true,
+          allowed_location_ids: true,
+          organizations: {
+            select: {
+              id: true,
+              plan_tier: true,
+              max_locations: true,
+              suspended_at: true,
+              locations: { where: { is_active: true }, select: { id: true } },
+            },
           },
         },
-      },
-    });
+      }),
+      claims.dev ? this.prisma.devices.findUnique({ where: { id: claims.dev }, select: { location_id: true, revoked_at: true } }) : null,
+    ]);
     if (!user) throw new UnauthorizedException();
+    // Revoking the device ends its PIN sessions right away, not when the access token expires.
+    if (claims.dev && (!device || device.revoked_at)) throw new UnauthorizedException();
 
     const org = user.organizations;
     if (org.suspended_at) throw new ForbiddenException(SUSPENDED);
@@ -62,7 +69,9 @@ export class TenantMiddleware implements NestMiddleware {
     const orgLocationIds = org.locations.map((l) => l.id);
     // Empty allowed_location_ids = every location of the org (Prisma reads SQL NULL as []).
     const allowed = user.allowed_location_ids;
-    const locationIds = allowed.length ? orgLocationIds.filter((id) => allowed.includes(id)) : orgLocationIds;
+    let locationIds = allowed.length ? orgLocationIds.filter((id) => allowed.includes(id)) : orgLocationIds;
+    // A PIN session works only at its device's location.
+    if (device) locationIds = locationIds.filter((id) => id === device.location_id);
 
     const requested = req.header('x-location-id');
     let locationId: string | undefined;
@@ -82,6 +91,7 @@ export class TenantMiddleware implements NestMiddleware {
       maxLocations: org.max_locations,
       locationId,
       locationIds,
+      deviceId: claims.dev,
     };
     next();
   }

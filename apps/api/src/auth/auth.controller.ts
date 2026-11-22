@@ -5,6 +5,13 @@ import { email, nullable, oneOf, parseBody, text } from '../common/validation';
 import { ACCESS_TTL_SECONDS, AuthService, DEMO_HANDLES, REFRESH_TTL_MS, Registration, Tokens } from './auth.service';
 
 export const REFRESH_COOKIE = 'pm_refresh';
+/** Authorized device token (Q29). Path /api so /api/devices can tell and replace this browser's device. */
+export const DEVICE_COOKIE = 'pm_device';
+const DEVICE_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+
+export function deviceCookieOptions(): CookieOptions {
+  return { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production', path: '/api', maxAge: DEVICE_TTL_MS };
+}
 
 /** Login is throttled per email: behind the web proxy every visitor shares one IP. */
 @Injectable()
@@ -21,6 +28,20 @@ const DEMO_LOGIN = { handle: oneOf(...DEMO_HANDLES), role: oneOf('OWNER', 'ADMIN
 function requireDemo() {
   if (process.env.DEMO_LOGIN !== 'on') throw new NotFoundException();
 }
+
+/** PIN login is throttled per device (the lockout per user is the main defense, Q32). */
+@Injectable()
+export class PinThrottlerGuard extends ThrottlerGuard {
+  protected async getTracker(req: Record<string, any>): Promise<string> {
+    return readCookie(req as Request, DEVICE_COOKIE) ?? req.ip;
+  }
+}
+
+const PIN_LOGIN = {
+  role: oneOf('OWNER', 'ADMIN', 'CASHIER', 'WAITER', 'KITCHEN'),
+  username: (v: unknown) => typeof v === 'string' && /^[a-z0-9.]{3,30}$/.test(v),
+  pin: (v: unknown) => typeof v === 'string' && /^\d{4,6}$/.test(v),
+};
 
 // shortcut: one budget shared by every visitor (behind the web proxy they share one IP); per-client limits come with Cloudflare (Phase 5).
 @Injectable()
@@ -43,13 +64,16 @@ export function readCookie(req: Request, name: string): string | undefined {
     ?.slice(name.length + 1);
 }
 
-export function parseLogin(body: unknown): { email: string; password: string } {
-  const { email, password } = (body ?? {}) as Record<string, unknown>;
+export function parseLogin(body: unknown): { email: string; password: string; handle?: string } {
+  const { email, password, handle } = (body ?? {}) as Record<string, unknown>;
   if (typeof email !== 'string' || typeof password !== 'string' || email.length > 150 || password.length > 200) {
     throw new BadRequestException('Correo y contraseña son obligatorios');
   }
   if (!email.trim() || !password) throw new BadRequestException('Correo y contraseña son obligatorios');
-  return { email, password };
+  if (handle !== undefined && (typeof handle !== 'string' || !/^[A-Za-z0-9_]{3,30}$/.test(handle))) {
+    throw new BadRequestException('Identificador inválido');
+  }
+  return { email, password, handle };
 }
 
 const REGISTRATION = {
@@ -91,8 +115,24 @@ export class AuthController {
   @HttpCode(200)
   @UseGuards(LoginThrottlerGuard)
   async login(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
-    const { email, password } = parseLogin(body);
-    return this.respond(res, await this.auth.login(email, password));
+    const { email, password, handle } = parseLogin(body);
+    return this.respond(res, await this.auth.login(email, password, handle));
+  }
+
+  /** Login step 1: business behind the handle and this browser's device for it (Q32). */
+  @Get('business/:handle')
+  business(@Param('handle') handle: string, @Req() req: Request) {
+    if (!/^[A-Za-z0-9_]{3,30}$/.test(handle)) throw new NotFoundException('No encontramos ese negocio. Revisa el identificador.');
+    return this.auth.business(handle, readCookie(req, DEVICE_COOKIE));
+  }
+
+  /** Username + PIN on an authorized device (Q32). */
+  @Post('pin')
+  @HttpCode(200)
+  @UseGuards(PinThrottlerGuard)
+  async pin(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const { role, username, pin } = parseBody<{ role: string; username: string; pin: string }>(body, PIN_LOGIN, ['role', 'username', 'pin']);
+    return this.respond(res, await this.auth.pinLogin(readCookie(req, DEVICE_COOKIE), role, username, pin));
   }
 
   /** Demo organizations on this environment, for the "Entrar como demo" buttons. */

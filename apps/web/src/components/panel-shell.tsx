@@ -10,6 +10,7 @@ import {
   LogOut,
   MapPin,
   Menu,
+  MonitorSmartphone,
   Package,
   ReceiptText,
   Users,
@@ -38,6 +39,7 @@ const NAV: NavItem[] = [
   { label: "Catálogo", icon: BookOpen, href: "/catalogo", roles: ["OWNER", "ADMIN"] },
   { label: "Inventario", icon: Package, href: "/inventario", roles: ["OWNER", "ADMIN", "CASHIER"] },
   { label: "Equipo", icon: Users, href: "/equipo", roles: ["OWNER", "ADMIN"] },
+  { label: "Dispositivos", icon: MonitorSmartphone, href: "/dispositivos", roles: ["OWNER", "ADMIN"] },
   { label: "Sedes", icon: MapPin, href: "/sedes", roles: ["OWNER"] },
   { label: "Reportes", icon: ChartColumn },
 ];
