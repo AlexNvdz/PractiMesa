@@ -7,7 +7,7 @@ import { button } from "@/components/ui";
 import { ApiError, type Role, useAuth } from "@/lib/auth";
 
 interface DemoOrganization {
-  slug: string;
+  handle: string;
   name: string;
   plan_tier: "SINGLE" | "MULTI";
 }
@@ -27,6 +27,7 @@ function messageFor(err: unknown): string {
     if (err.status === 401) return "Correo o contraseña incorrectos.";
     if (err.status === 429) return "Demasiados intentos. Espera un minuto e inténtalo de nuevo.";
     if (err.status === 400) return "Escribe tu correo y tu contraseña.";
+    if (err.detail) return err.detail;
     return "Algo falló de nuestro lado. Inténtalo de nuevo en un momento.";
   }
   return "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.";
@@ -61,11 +62,11 @@ export default function LoginPage() {
       .then(setDemo, () => undefined);
   }, []);
 
-  async function enterDemo(slug: string, role: Role) {
+  async function enterDemo(handle: string, role: Role) {
     setError(null);
     setSubmitting(true);
     try {
-      await demoLogin(slug, role);
+      await demoLogin(handle, role);
     } catch (err) {
       setError(messageFor(err));
       setSubmitting(false);
@@ -183,7 +184,7 @@ export default function LoginPage() {
               pantalla.
             </p>
             {demo.map((org) => (
-              <div key={org.slug} className="mt-4">
+              <div key={org.handle} className="mt-4">
                 {demo.length > 1 && (
                   <p className="mb-2 text-sm font-medium text-ink-2">
                     {org.name} · {org.plan_tier === "SINGLE" ? "1 sede" : "varias sedes"}
@@ -196,7 +197,7 @@ export default function LoginPage() {
                       key={role}
                       type="button"
                       disabled={submitting}
-                      onClick={() => void enterDemo(org.slug, role)}
+                      onClick={() => void enterDemo(org.handle, role)}
                       className={`${button.secondary} ${role === "OWNER" || role === "ADMIN" ? "col-span-3" : "col-span-2 px-2"}`}
                     >
                       {label}

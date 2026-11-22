@@ -1,5 +1,5 @@
 // Integration test: needs Postgres with migrations applied.
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,7 +15,7 @@ let orgId: string;
 let userId: string;
 
 beforeAll(async () => {
-  orgId = (await db.organizations.create({ data: { name: 'Auth test', slug: `auth-${suffix}`, plan_tier: 'SINGLE' } })).id;
+  orgId = (await db.organizations.create({ data: { name: 'Auth test', handle: `auth_${suffix}`, plan_tier: 'SINGLE' } })).id;
   userId = (
     await db.users.create({
       data: { organization_id: orgId, email, password_hash: await hashPassword('s3cret-pass'), full_name: 'Owner', role: 'OWNER' },
@@ -30,12 +30,12 @@ afterAll(async () => {
 
 describe('AuthService', () => {
   it('lists the requested demo organizations and logs in as the first user of a role', async () => {
-    await expect(auth.demoOrganizations([`auth-${suffix}`, 'no-existe'])).resolves.toEqual([
-      { slug: `auth-${suffix}`, name: 'Auth test', plan_tier: 'SINGLE' },
+    await expect(auth.demoOrganizations([`auth_${suffix}`, 'no-existe'])).resolves.toEqual([
+      { handle: `auth_${suffix}`, name: 'Auth test', plan_tier: 'SINGLE' },
     ]);
-    const tokens = await auth.demoLogin(`auth-${suffix}`, 'OWNER');
+    const tokens = await auth.demoLogin(`auth_${suffix}`, 'OWNER');
     await expect(jwt.verifyAsync(tokens.accessToken)).resolves.toMatchObject({ sub: userId });
-    await expect(auth.demoLogin(`auth-${suffix}`, 'KITCHEN')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(auth.demoLogin(`auth_${suffix}`, 'KITCHEN')).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('logs in with case-insensitive email and issues a JWT for the user', async () => {
@@ -87,6 +87,32 @@ describe('AuthService', () => {
     await expect(auth.refresh(refreshToken)).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(auth.refresh('unknown')).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(auth.refresh(undefined)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('gives no session to a suspended business, not even by refresh', async () => {
+    const { refreshToken } = await auth.login(email, 's3cret-pass');
+    await db.organizations.update({ where: { id: orgId }, data: { suspended_at: new Date() } });
+    try {
+      await expect(auth.login(email, 's3cret-pass')).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(auth.refresh(refreshToken)).rejects.toBeInstanceOf(ForbiddenException);
+      // A wrong password still answers like any failed login.
+      await expect(auth.login(email, 'nope')).rejects.toBeInstanceOf(UnauthorizedException);
+    } finally {
+      await db.organizations.update({ where: { id: orgId }, data: { suspended_at: null } });
+    }
+  });
+
+  it('logs platform admins in by case-insensitive email, with the login error otherwise', async () => {
+    const admin = await db.platform_admins.create({
+      data: { email: `pa-${suffix}@test.demo`, password_hash: await hashPassword('platform-pass'), full_name: 'PA' },
+    });
+    try {
+      await expect(auth.platformLogin(` PA-${suffix}@TEST.demo`, 'platform-pass')).resolves.toBe(admin.id);
+      await expect(auth.platformLogin(`pa-${suffix}@test.demo`, 'nope')).rejects.toThrow('Correo o contraseña incorrectos');
+      await expect(auth.platformLogin(email, 's3cret-pass')).rejects.toBeInstanceOf(UnauthorizedException);
+    } finally {
+      await db.platform_admins.delete({ where: { id: admin.id } });
+    }
   });
 
   it('logout revokes the refresh token', async () => {

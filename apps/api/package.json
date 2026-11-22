@@ -11,7 +11,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:generate": "prisma generate",
     "factus:check": "node scripts/factus-check.mjs",
-    "db:seed": "ts-node --transpile-only scripts/seed.ts"
+    "db:seed": "ts-node --transpile-only scripts/seed.ts",
+    "platform:admin": "ts-node --transpile-only scripts/platform-admin.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.6.0",

@@ -27,6 +27,8 @@ import { IntegrationsController } from './payments/integrations.controller';
 import { CashRegistersController } from './pos/cash-registers.controller';
 import { FloorsController } from './pos/floors.controller';
 import { TablesController } from './pos/tables.controller';
+import { PlatformController } from './platform/platform.controller';
+import { PlatformGuard } from './platform/platform.guard';
 import { PrismaService } from './prisma/prisma.service';
 
 @Module({
@@ -53,6 +55,7 @@ import { PrismaService } from './prisma/prisma.service';
     FactusPayWebhookController,
     InvoicingController,
     LiveController,
+    PlatformController,
   ],
   providers: [
     PrismaService,
@@ -62,6 +65,7 @@ import { PrismaService } from './prisma/prisma.service';
     InvoicingService,
     LiveEventsService,
     LoginThrottlerGuard,
+    PlatformGuard,
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_FILTER, useClass: PrismaExceptionFilter },
   ],
@@ -69,10 +73,10 @@ import { PrismaService } from './prisma/prisma.service';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Public routes resolve the tenant differently (storefront slug, webhook signature).
+    // Public routes resolve the tenant differently (storefront handle, webhook key); platform routes have no tenant.
     consumer
       .apply(TenantMiddleware)
-      .exclude('health', 'auth/{*path}', 'public/{*path}', 'webhooks/{*path}')
+      .exclude('health', 'auth/{*path}', 'public/{*path}', 'webhooks/{*path}', 'platform/{*path}')
       .forRoutes('{*path}');
   }
 }

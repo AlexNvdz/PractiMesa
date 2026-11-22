@@ -16,7 +16,7 @@ export class MeController {
       db.users.findUniqueOrThrow({ where: { id: tenant.userId }, select: { id: true, full_name: true, email: true, role: true } }),
       db.organizations.findUniqueOrThrow({
         where: { id: tenant.organizationId },
-        select: { id: true, name: true, slug: true, plan_tier: true, max_locations: true },
+        select: { id: true, name: true, handle: true, plan_tier: true, max_locations: true },
       }),
       db.locations.findMany({
         where: { id: { in: tenant.locationIds } },

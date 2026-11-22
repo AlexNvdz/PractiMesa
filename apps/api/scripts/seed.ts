@@ -18,11 +18,9 @@ async function main() {
   const password = process.env.SEED_PASSWORD || randomBytes(9).toString('base64url');
   const passwordHash = await hashPassword(password);
 
-  const org = await db.organizations.upsert({
-    where: { slug: 'cafe-ejemplo' },
-    update: {},
-    create: { name: 'Café Ejemplo', slug: 'cafe-ejemplo', plan_tier: 'SINGLE', max_locations: 1 },
-  });
+  const org =
+    (await db.organizations.findFirst({ where: { handle: 'cafe_ejemplo' } })) ??
+    (await db.organizations.create({ data: { name: 'Café Ejemplo', handle: 'cafe_ejemplo', plan_tier: 'SINGLE', max_locations: 1 } }));
   if (!(await db.locations.findFirst({ where: { organization_id: org.id } }))) {
     await db.locations.create({
       data: { organization_id: org.id, name: 'Sede Chapinero', city: 'Bogotá', address: 'Cra. 7 #60-20' },

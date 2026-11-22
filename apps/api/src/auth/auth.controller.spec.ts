@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AuthController, DEMO_SLUGS, DemoThrottlerGuard, LoginThrottlerGuard, readCookie, REFRESH_COOKIE } from './auth.controller';
+import { AuthController, DEMO_HANDLES, DemoThrottlerGuard, LoginThrottlerGuard, readCookie, REFRESH_COOKIE } from './auth.controller';
 import type { AuthService } from './auth.service';
 
 const tokens = { accessToken: 'access', refreshToken: 'refresh' };
@@ -10,7 +10,7 @@ function setup() {
     login: jest.fn().mockResolvedValue(tokens),
     refresh: jest.fn().mockResolvedValue(tokens),
     logout: jest.fn().mockResolvedValue(undefined),
-    demoOrganizations: jest.fn().mockResolvedValue([{ slug: 'cafe-ejemplo', name: 'Café Ejemplo', plan_tier: 'SINGLE' }]),
+    demoOrganizations: jest.fn().mockResolvedValue([{ handle: 'cafe_ejemplo', name: 'Café Ejemplo', plan_tier: 'SINGLE' }]),
     demoLogin: jest.fn().mockResolvedValue(tokens),
   };
   const res = { cookie: jest.fn(), clearCookie: jest.fn() } as unknown as Response;
@@ -74,7 +74,7 @@ describe('demo login', () => {
   it('does not exist unless DEMO_LOGIN=on', async () => {
     const { controller, service, res } = setup();
     expect(() => controller.demoOrganizations()).toThrow(NotFoundException);
-    await expect(controller.demoLogin({ slug: 'cafe-ejemplo', role: 'OWNER' }, res)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(controller.demoLogin({ handle: 'cafe_ejemplo', role: 'OWNER' }, res)).rejects.toBeInstanceOf(NotFoundException);
     expect(service.demoLogin).not.toHaveBeenCalled();
   });
 
@@ -82,13 +82,13 @@ describe('demo login', () => {
     process.env.DEMO_LOGIN = 'on';
     const { controller, service, res } = setup();
     await expect(controller.demoOrganizations()).resolves.toHaveLength(1);
-    expect(service.demoOrganizations).toHaveBeenCalledWith(DEMO_SLUGS);
-    await expect(controller.demoLogin({ slug: 'cadena-ejemplo', role: 'KITCHEN' }, res)).resolves.toEqual({ access_token: 'access', expires_in: 900 });
-    expect(service.demoLogin).toHaveBeenCalledWith('cadena-ejemplo', 'KITCHEN');
+    expect(service.demoOrganizations).toHaveBeenCalledWith(DEMO_HANDLES);
+    await expect(controller.demoLogin({ handle: 'cadena_ejemplo', role: 'KITCHEN' }, res)).resolves.toEqual({ access_token: 'access', expires_in: 900 });
+    expect(service.demoLogin).toHaveBeenCalledWith('cadena_ejemplo', 'KITCHEN');
     expect(res.cookie).toHaveBeenCalledWith(REFRESH_COOKIE, 'refresh', expect.objectContaining({ httpOnly: true }));
   });
 
-  it.each([{ slug: 'un-cliente-real', role: 'OWNER' }, { slug: 'cafe-ejemplo', role: 'SUPERADMIN' }, { slug: 'cafe-ejemplo' }, undefined])(
+  it.each([{ handle: 'un_cliente_real', role: 'OWNER' }, { handle: 'cafe_ejemplo', role: 'SUPERADMIN' }, { handle: 'cafe_ejemplo' }, undefined])(
     'rejects anything but a demo organization and role: %p',
     async (body) => {
       process.env.DEMO_LOGIN = 'on';

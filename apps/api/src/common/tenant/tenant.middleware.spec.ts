@@ -50,6 +50,19 @@ describe('TenantMiddleware', () => {
     await expect(mw.use(req(forged), res, jest.fn())).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('rejects platform tokens', async () => {
+    const { mw, findUnique } = setup(dbUser());
+    const platform = await jwt.signAsync({ sub: 'user-a' }, { audience: 'platform' });
+    await expect(mw.use(req(platform), res, jest.fn())).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
+  it('rejects users of a suspended business', async () => {
+    const user = dbUser();
+    const { mw } = setup({ ...user, organizations: { ...user.organizations, suspended_at: new Date() } });
+    await expect(mw.use(req(await token()), res, jest.fn())).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
   it('rejects tokens of deleted users', async () => {
     const { mw } = setup(null);
     await expect(mw.use(req(await token()), res, jest.fn())).rejects.toBeInstanceOf(UnauthorizedException);

@@ -27,7 +27,7 @@ export interface TestOrg {
 export async function createOrg(db: PrismaService, plan: 'SINGLE' | 'MULTI', locationCount: number): Promise<TestOrg> {
   const suffix = randomUUID().slice(0, 8);
   const org = await db.organizations.create({
-    data: { name: `Test ${suffix}`, slug: `t-${suffix}`, plan_tier: plan, max_locations: plan === 'SINGLE' ? 1 : 3 },
+    data: { name: `Test ${suffix}`, handle: `t_${suffix}`, plan_tier: plan, max_locations: plan === 'SINGLE' ? 1 : 3 },
   });
   const locations: string[] = [];
   for (let i = 1; i <= locationCount; i++) {

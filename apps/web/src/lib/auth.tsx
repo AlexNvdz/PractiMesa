@@ -7,7 +7,7 @@ export type Role = "OWNER" | "ADMIN" | "CASHIER" | "WAITER" | "KITCHEN";
 
 export interface Me {
   user: { id: string; full_name: string; email: string; role: Role };
-  organization: { id: string; name: string; slug: string; plan_tier: "SINGLE" | "MULTI"; max_locations: number };
+  organization: { id: string; name: string; handle: string; plan_tier: "SINGLE" | "MULTI"; max_locations: number };
   locations: { id: string; name: string; city: string }[];
   current_location_id: string | null;
 }
@@ -19,7 +19,7 @@ interface AuthContextValue {
   me: Me | null;
   login(email: string, password: string): Promise<void>;
   /** "Entrar como demo": session as the example organization's user of that role. */
-  demoLogin(slug: string, role: Role): Promise<void>;
+  demoLogin(handle: string, role: Role): Promise<void>;
   logout(): Promise<void>;
   /** Location every request works on (x-location-id); MULTI users pick it in the header. */
   setLocation(id: string): void;
@@ -137,14 +137,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new ApiError(res.status);
+      if (!res.ok) {
+        // A suspended business (403) gets the API's explanation.
+        const message = ((await res.json().catch(() => null)) as { message?: unknown } | null)?.message;
+        throw new ApiError(res.status, res.status === 403 && typeof message === "string" ? message : undefined);
+      }
       store((await res.json()) as TokenResponse, refresh);
       await loadMe();
     },
     [store, refresh, loadMe],
   );
   const login = useCallback((email: string, password: string) => start("/api/auth/login", { email, password }), [start]);
-  const demoLogin = useCallback((slug: string, role: Role) => start("/api/auth/demo", { slug, role }), [start]);
+  const demoLogin = useCallback((handle: string, role: Role) => start("/api/auth/demo", { handle, role }), [start]);
 
   const setLocation = useCallback((id: string) => {
     location.current = id;

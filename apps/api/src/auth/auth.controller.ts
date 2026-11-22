@@ -16,8 +16,8 @@ export class LoginThrottlerGuard extends ThrottlerGuard {
 }
 
 /** Demo organizations (Q13), fixed in code so demo login can never open a real business. */
-export const DEMO_SLUGS = ['cafe-ejemplo', 'cadena-ejemplo'];
-const DEMO_LOGIN = { slug: oneOf(...DEMO_SLUGS), role: oneOf('OWNER', 'ADMIN', 'CASHIER', 'WAITER', 'KITCHEN') };
+export const DEMO_HANDLES = ['cafe_ejemplo', 'cadena_ejemplo'];
+const DEMO_LOGIN = { handle: oneOf(...DEMO_HANDLES), role: oneOf('OWNER', 'ADMIN', 'CASHIER', 'WAITER', 'KITCHEN') };
 
 /** Demo login exists only where DEMO_LOGIN=on (staging); elsewhere the routes answer 404. */
 function requireDemo() {
@@ -45,7 +45,7 @@ export function readCookie(req: Request, name: string): string | undefined {
     ?.slice(name.length + 1);
 }
 
-function parseLogin(body: unknown): { email: string; password: string } {
+export function parseLogin(body: unknown): { email: string; password: string } {
   const { email, password } = (body ?? {}) as Record<string, unknown>;
   if (typeof email !== 'string' || typeof password !== 'string' || email.length > 150 || password.length > 200) {
     throw new BadRequestException('Correo y contraseña son obligatorios');
@@ -70,7 +70,7 @@ export class AuthController {
   @Get('demo')
   demoOrganizations() {
     requireDemo();
-    return this.auth.demoOrganizations(DEMO_SLUGS);
+    return this.auth.demoOrganizations(DEMO_HANDLES);
   }
 
   /** Session as the demo user of a role, without a password. */
@@ -80,8 +80,8 @@ export class AuthController {
   @UseGuards(DemoThrottlerGuard)
   async demoLogin(@Body() body: unknown, @Res({ passthrough: true }) res: Response) {
     requireDemo();
-    const { slug, role } = parseBody<{ slug: string; role: string }>(body, DEMO_LOGIN, ['slug', 'role']);
-    return this.respond(res, await this.auth.demoLogin(slug, role));
+    const { handle, role } = parseBody<{ handle: string; role: string }>(body, DEMO_LOGIN, ['handle', 'role']);
+    return this.respond(res, await this.auth.demoLogin(handle, role));
   }
 
   @Post('refresh')
