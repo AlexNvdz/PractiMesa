@@ -24,6 +24,7 @@ export function Catalog({ me }: { me: Me }) {
   const [managing, setManaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const locationName = me.locations.find((l) => l.id === me.current_location_id)?.name ?? "esta sede";
+  const multi = me.organization.plan_tier === "MULTI";
 
   // The page remounts this screen when the location changes, so it loads once per location.
   useEffect(() => {
@@ -55,7 +56,9 @@ export function Catalog({ me }: { me: Me }) {
     );
   }
 
-  const shown = query ? products.filter((p) => fold(p.name).includes(fold(query))) : products;
+  // Chain products plus this location's own ones; other locations' own products are theirs to manage (Q43).
+  const visible = products.filter((p) => !p.location_id || p.location_id === me.current_location_id);
+  const shown = query ? visible.filter((p) => fold(p.name).includes(fold(query))) : visible;
   const groups = [
     ...categories.map((c) => ({ id: c.id, name: c.name, items: shown.filter((p) => p.category_id === c.id) })),
     { id: "none", name: "Sin categoría", items: shown.filter((p) => !p.category_id || !categories.some((c) => c.id === p.category_id)) },
@@ -80,12 +83,12 @@ export function Catalog({ me }: { me: Me }) {
         </button>
       </div>
 
-      {!products.length && (
+      {!visible.length && (
         <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
           Todavía no hay productos. Crea el primero con &ldquo;Nuevo producto&rdquo;.
         </p>
       )}
-      {products.length > 0 && !groups.length && <p className="py-10 text-center text-[15px] text-muted">Ningún producto coincide con &ldquo;{query}&rdquo;.</p>}
+      {visible.length > 0 && !groups.length && <p className="py-10 text-center text-[15px] text-muted">Ningún producto coincide con &ldquo;{query}&rdquo;.</p>}
 
       {groups.map((g) => (
         <section key={g.id} aria-labelledby={`cat-${g.id}`} className="mb-8">
@@ -95,8 +98,8 @@ export function Catalog({ me }: { me: Me }) {
           </h2>
           <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
             {g.items.map((p) => {
-              const here = local[p.id];
-              const price = here?.custom_price_cop ?? p.base_price_cop;
+              const override = local[p.id];
+              const price = override?.custom_price_cop ?? p.base_price_cop;
               return (
                 <li key={p.id}>
                   <button
@@ -110,16 +113,19 @@ export function Catalog({ me }: { me: Me }) {
                         <span className="block truncate text-sm text-muted">{p.modifiers_schema.map((m) => m.name).join(" · ")}</span>
                       )}
                     </span>
+                    {multi && p.location_id && <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">Solo esta sede</span>}
                     {!p.is_active ? (
                       <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">Inactivo</span>
+                    ) : override?.is_listed === false ? (
+                      <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">No se vende aquí</span>
                     ) : (
-                      here?.is_available === false && (
+                      override?.is_available === false && (
                         <span className="rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning">No disponible aquí</span>
                       )
                     )}
                     <span className="text-right">
                       <span className="figures block text-[15px] font-medium">{cop(price)}</span>
-                      {here?.custom_price_cop != null && <span className="figures block text-xs text-muted">Base {cop(p.base_price_cop)}</span>}
+                      {override?.custom_price_cop != null && <span className="figures block text-xs text-muted">Base {cop(p.base_price_cop)}</span>}
                     </span>
                   </button>
                 </li>
@@ -136,6 +142,7 @@ export function Catalog({ me }: { me: Me }) {
           categories={categories}
           local={product ? local[product.id] : undefined}
           locationName={locationName}
+          multi={multi}
           onSaved={(saved, here) => {
             setProducts((all) => [...(all ?? []).filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, "es")));
             setLocal((all) => ({ ...all, [saved.id]: here }));

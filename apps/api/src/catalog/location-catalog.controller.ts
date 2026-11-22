@@ -5,8 +5,8 @@ import { requireLocation } from '../common/tenant/tenant-context';
 import { bool, MAX_COP, MAX_QTY, nullable, num, parseBody } from '../common/validation';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** null custom price = use the product base price. */
-const LOCATION_PRODUCT = { custom_price_cop: nullable(num(0, MAX_COP)), is_available: bool };
+/** null custom price = use the product base price. is_listed = false: this location never sells it (Q43). */
+const LOCATION_PRODUCT = { custom_price_cop: nullable(num(0, MAX_COP)), is_available: bool, is_listed: bool };
 /** Stock may go negative (sales are never blocked by inventory), so current_qty accepts negatives. */
 const LOCATION_STOCK = { current_qty: num(-MAX_QTY, MAX_QTY), min_alert_qty: num(0, MAX_QTY) };
 /** Goods received: a positive amount added to the stock. */
@@ -33,7 +33,7 @@ export class LocationCatalogController {
   setProduct(@Req() req: Request, @Param('productId', ParseUUIDPipe) productId: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const key = { location_id: requireLocation(tenant), product_id: productId };
-    const data = parseBody<{ custom_price_cop?: number | null; is_available?: boolean }>(body, LOCATION_PRODUCT);
+    const data = parseBody<{ custom_price_cop?: number | null; is_available?: boolean; is_listed?: boolean }>(body, LOCATION_PRODUCT);
     return this.prisma
       .forTenant(tenant.organizationId)
       .location_products.upsert({ where: { location_id_product_id: key }, create: { ...key, ...data }, update: data });

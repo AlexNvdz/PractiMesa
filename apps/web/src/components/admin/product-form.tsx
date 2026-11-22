@@ -2,7 +2,7 @@
 
 import { LoaderCircle, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { button, field } from "@/components/ui";
+import { button, choice, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import { ApiError } from "@/lib/auth";
 import { cop, pesos } from "@/lib/format";
@@ -66,13 +66,15 @@ function problem(name: string, price: number | null, groups: ModifierGroup[], re
 
 /**
  * Create or edit a product: master data and options (organization-wide), recipe for the inventory, and its
- * price and availability at the current location.
+ * price and availability at the current location. On MULTI a new product can belong to this location only,
+ * and a chain product can be dropped from this location (Q43).
  */
 export function ProductForm({
   product,
   categories,
   local,
   locationName,
+  multi,
   onSaved,
   onDeleted,
 }: {
@@ -80,6 +82,7 @@ export function ProductForm({
   categories: Category[];
   local?: LocationProduct;
   locationName: string;
+  multi: boolean;
   onSaved: (product: Product, local: LocationProduct) => void;
   onDeleted: (id: string) => void;
 }) {
@@ -96,6 +99,8 @@ export function ProductForm({
   const [recipe, setRecipe] = useState<RecipeLine[] | null>(product ? null : []);
   const [localPrice, setLocalPrice] = useState<number | null>(local?.custom_price_cop == null ? null : Number(local.custom_price_cop));
   const [available, setAvailable] = useState(local?.is_available ?? true);
+  const [listed, setListed] = useState(local?.is_listed ?? true);
+  const [onlyHere, setOnlyHere] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -146,14 +151,14 @@ export function ProductForm({
         })),
       };
       const id = product?.id ?? created.current;
-      const saved = id ? await api<Product>(`/products/${id}`, "PATCH", body) : await api<Product>("/products", "POST", body);
+      const saved = id ? await api<Product>(`/products/${id}`, "PATCH", body) : await api<Product>("/products", "POST", { ...body, only_here: onlyHere });
       created.current = saved.id;
       await api(
         `/products/${saved.id}/recipe`,
         "PUT",
         recipe.map((l) => ({ ingredient_id: l.ingredient_id, quantity_required: Number(l.quantity.replace(",", ".")) })),
       );
-      const here = await api<LocationProduct>(`/location-products/${saved.id}`, "PUT", { custom_price_cop: localPrice, is_available: available });
+      const here = await api<LocationProduct>(`/location-products/${saved.id}`, "PUT", { custom_price_cop: localPrice, is_available: available, is_listed: listed });
       onSaved(saved, here);
     } catch (err) {
       setError(errorMessage(err));
@@ -365,7 +370,31 @@ export function ProductForm({
           En {locationName}
         </h3>
         <p className="mt-0.5 text-sm text-muted">Precio propio de esta sede y si se vende hoy.</p>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        {multi && !product && (
+          <fieldset className="mt-3 grid grid-cols-2 gap-2">
+            <legend className="sr-only">Dónde se vende</legend>
+            {(
+              [
+                [false, "Toda la cadena"],
+                [true, `Solo ${locationName}`],
+              ] as const
+            ).map(([value, label]) => (
+              <label key={label} className={choice}>
+                <input type="radio" name="where" checked={onlyHere === value} onChange={() => setOnlyHere(value)} className="sr-only" />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+        )}
+        {multi && product?.location_id && <p className="mt-3 text-sm text-ink-2">Producto propio de {locationName}: solo se vende aquí.</p>}
+        {multi && product && !product.location_id && (
+          <label className="mt-3 flex min-h-11 items-center gap-3 text-[15px]">
+            <input type="checkbox" checked={listed} onChange={(e) => setListed(e.target.checked)} className="size-5 accent-accent" />
+            Se vende en esta sede
+            <span className="text-sm text-muted">(si lo quitas, sale del menú de esta sede; las demás no cambian)</span>
+          </label>
+        )}
+        <div className={`mt-3 grid gap-4 sm:grid-cols-2 ${listed ? "" : "hidden"}`}>
           <label className="block">
             <span className={labelClass}>Precio en esta sede</span>
             <Money value={localPrice} onChange={setLocalPrice} placeholder={price === null ? "Igual al precio" : `Igual: ${cop(price)}`} />
