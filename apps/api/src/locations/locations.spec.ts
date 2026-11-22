@@ -74,6 +74,16 @@ describe('locations', () => {
     expect((await api('PATCH', '/locations/not-a-uuid', { name: 'x' })).status).toBe(400);
   });
 
+  it('never deactivates the last active location', async () => {
+    const api = await client(app, multi.users.OWNER);
+    const active = await db.locations.findMany({ where: { organization_id: multi.id, is_active: true } });
+    for (const extra of active.slice(1)) expect((await api('PATCH', `/locations/${extra.id}`, { is_active: false })).status).toBe(200);
+    const res = await api('PATCH', `/locations/${active[0].id}`, { is_active: false });
+    expect(res.status).toBe(409);
+    expect(res.body.message).toBe('Debe quedar al menos una sede activa');
+    expect((await api('PATCH', `/locations/${active[0].id}`, { name: 'Sigue activa' })).status).toBe(200);
+  });
+
   it('deletes a location without history, never the last one or one with orders', async () => {
     const owner = await client(app, single.users.OWNER);
     expect((await owner('DELETE', `/locations/${single.locations[0]}`)).status).toBe(409);

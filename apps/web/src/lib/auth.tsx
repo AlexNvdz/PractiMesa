@@ -7,7 +7,7 @@ export type Role = "OWNER" | "ADMIN" | "CASHIER" | "WAITER" | "KITCHEN";
 
 export interface Me {
   user: { id: string; full_name: string; email: string; role: Role };
-  organization: { id: string; name: string; slug: string; plan_tier: "SINGLE" | "MULTI" };
+  organization: { id: string; name: string; slug: string; plan_tier: "SINGLE" | "MULTI"; max_locations: number };
   locations: { id: string; name: string; city: string }[];
   current_location_id: string | null;
 }
@@ -23,6 +23,8 @@ interface AuthContextValue {
   logout(): Promise<void>;
   /** Location every request works on (x-location-id); MULTI users pick it in the header. */
   setLocation(id: string): void;
+  /** Reloads the session (after locations change, so the header picker shows them). */
+  reloadMe(): Promise<void>;
   /** fetch against the API with the access token; refreshes once on 401. */
   apiFetch(path: string, init?: RequestInit): Promise<Response>;
 }
@@ -160,8 +162,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ status, me, login, demoLogin, logout, setLocation, apiFetch }),
-    [status, me, login, demoLogin, logout, setLocation, apiFetch],
+    () => ({ status, me, login, demoLogin, logout, setLocation, reloadMe: loadMe, apiFetch }),
+    [status, me, login, demoLogin, logout, setLocation, loadMe, apiFetch],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

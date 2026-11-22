@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowLeft, ShoppingBag, Users } from "lucide-react";
+import { ArrowLeft, Pencil, ShoppingBag, Users } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { button } from "@/components/ui";
@@ -59,6 +60,7 @@ export function Service({ me }: { me: Me }) {
   const api = useApi();
   const now = useNow();
   const canOrder = me.user.role !== "KITCHEN";
+  const canEdit = me.user.role === "OWNER" || me.user.role === "ADMIN";
   const canCharge = CHARGE_ROLES.has(me.user.role);
 
   const [tables, setTables] = useState<DiningTable[] | null>(null);
@@ -300,6 +302,7 @@ export function Service({ me }: { me: Me }) {
             selected={selected}
             now={now}
             canOrder={canOrder}
+            canEdit={canEdit}
             onSelect={(next) => select(next)}
             onPickup={() => select({ pickup: true }, true)}
           />
@@ -399,6 +402,7 @@ function FloorMap({
   selected,
   now,
   canOrder,
+  canEdit,
   onSelect,
   onPickup,
 }: {
@@ -409,6 +413,7 @@ function FloorMap({
   selected: Selection;
   now: number;
   canOrder: boolean;
+  canEdit: boolean;
   onSelect: (next: Selection) => void;
   onPickup: () => void;
 }) {
@@ -433,17 +438,25 @@ function FloorMap({
           {count("FREE")} libres · {count("OCCUPIED")} ocupadas
           {count("RESERVED") > 0 && ` · ${count("RESERVED")} reservadas`}
         </p>
-        {canOrder && (
-          <button type="button" onClick={onPickup} className={`${button.secondary} pl-3.5`}>
-            <ShoppingBag size={18} strokeWidth={2.25} aria-hidden />
-            Para llevar
-          </button>
-        )}
+        <div className="flex gap-2">
+          {canEdit && (
+            <Link href="/mesas/editar" className={`${button.ghost} pl-3.5`}>
+              <Pencil size={18} strokeWidth={2.25} aria-hidden />
+              Editar mesas
+            </Link>
+          )}
+          {canOrder && (
+            <button type="button" onClick={onPickup} className={`${button.secondary} pl-3.5`}>
+              <ShoppingBag size={18} strokeWidth={2.25} aria-hidden />
+              Para llevar
+            </button>
+          )}
+        </div>
       </div>
 
       {!tables.length && (
         <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
-          Esta sede todavía no tiene mesas.
+          Esta sede todavía no tiene mesas.{canEdit && " Agrégalas en “Editar mesas”."}
         </p>
       )}
 

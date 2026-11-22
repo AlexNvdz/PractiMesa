@@ -36,6 +36,7 @@ const NAV: NavItem[] = [
   { label: "Cocina", icon: ChefHat, href: "/cocina", roles: ["OWNER", "ADMIN", "KITCHEN"] },
   { label: "Catálogo", icon: BookOpen, href: "/catalogo", roles: ["OWNER", "ADMIN"] },
   { label: "Inventario", icon: Package, href: "/inventario", roles: ["OWNER", "ADMIN", "CASHIER"] },
+  { label: "Sedes", icon: MapPin, href: "/sedes", roles: ["OWNER"] },
   { label: "Reportes", icon: ChartColumn },
 ];
 
@@ -87,7 +88,7 @@ function Sidebar({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
                 </li>
               );
             }
-            const active = pathname === href;
+            const active = pathname === href || pathname.startsWith(`${href}/`);
             return (
               <li key={label}>
                 <Link

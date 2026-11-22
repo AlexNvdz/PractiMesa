@@ -34,7 +34,7 @@ it('returns the session user, organization and allowed locations', async () => {
 
   await expect(new MeController(db).me(req)).resolves.toEqual({
     user: { id: userId, full_name: 'Ana', email: `me-${suffix}@test.demo`, role: 'CASHIER' },
-    organization: { id: orgId, name: 'Me test', slug: `me-${suffix}`, plan_tier: 'SINGLE' },
+    organization: { id: orgId, name: 'Me test', slug: `me-${suffix}`, plan_tier: 'SINGLE', max_locations: 1 },
     locations: [{ id: locationId, name: 'Centro', city: 'Cali' }],
     current_location_id: locationId,
   });

@@ -46,10 +46,20 @@ export class LocationsController {
     });
   }
 
+  /** Never deactivates the last active location: without one nobody could work in the panel. */
   @Patch(':id')
   update(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const data = parseBody<Prisma.locationsUncheckedUpdateInput>(body, LOCATION);
-    return this.prisma.forTenant(req.tenant!.organizationId).locations.update({ where: { id }, data });
+    return this.prisma.tenantTransaction(req.tenant!.organizationId, async (tx) => {
+      if (data.is_active === false) {
+        // Organization row lock: two concurrent deactivations cannot both see the other location active.
+        await tx.$queryRaw`SELECT id FROM organizations WHERE id = app_org_id() FOR UPDATE`;
+        if (!(await tx.locations.count({ where: { is_active: true, id: { not: id } } }))) {
+          throw new ConflictException('Debe quedar al menos una sede activa');
+        }
+      }
+      return tx.locations.update({ where: { id }, data });
+    });
   }
 
   /** Orders and cash registers cascade with the location, so a location with history can only be deactivated. */
