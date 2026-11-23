@@ -58,13 +58,16 @@ function describe({ kind, details: d }: ActivityEntry): { title: string; meta?: 
 export function ActivityLine({ entry, withDate = false }: { entry: ActivityEntry; withDate?: boolean }) {
   const { title, meta, badge } = describe(entry);
   return (
-    <li className="flex items-start gap-4 px-5 py-3">
-      <div className="min-w-0 flex-1">
-        <p className="text-[15px] leading-snug">{title}</p>
-        {meta && <p className="figures text-sm text-muted">{meta}</p>}
+    <li className="flex items-start gap-3 px-4 py-3 sm:gap-4 sm:px-5">
+      {/* On a phone the badge goes under the text so the title keeps its width. */}
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-1 sm:flex-row sm:gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] leading-snug">{title}</p>
+          {meta && <p className="figures text-sm text-muted">{meta}</p>}
+        </div>
+        {badge && <span className={`figures shrink-0 rounded-full px-2 py-0.5 text-xs font-medium sm:mt-0.5 ${badge[1]}`}>{badge[0]}</span>}
       </div>
-      {badge && <span className={`figures mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badge[1]}`}>{badge[0]}</span>}
-      <p className="w-36 shrink-0 text-right text-sm">
+      <p className="w-28 shrink-0 text-right text-sm sm:w-36">
         <span className="block truncate text-ink-2">{entry.users.full_name}</span>
         <span className="figures block text-muted">{withDate ? dateTime(entry.created_at) : time(entry.created_at)}</span>
       </p>

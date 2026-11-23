@@ -2,13 +2,14 @@
 
 import { LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { type ActivityEntry, ActivityLine } from "@/components/admin/activity";
 import { PanelLoading, PanelShell } from "@/components/panel-shell";
-import { button, field } from "@/components/ui";
+import { CashKeypad } from "@/components/pos/cash-keypad";
+import { button } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import { type Me, useRequiredMe } from "@/lib/auth";
-import { cop, dateTime, pesos, time } from "@/lib/format";
+import { cop, time } from "@/lib/format";
 import type { CashRegister } from "@/lib/pos";
-
 
 export default function CajaPage() {
   const me = useRequiredMe();
@@ -24,14 +25,21 @@ export default function CajaPage() {
 function CashRegisters({ me }: { me: Me }) {
   const api = useApi();
   const [registers, setRegisters] = useState<CashRegister[] | null>(null);
-  const [amount, setAmount] = useState("");
+  const [today, setToday] = useState<ActivityEntry[]>([]);
+  const [amount, setAmount] = useState(0);
+  // A new keypad (empty tape) after every open or close.
+  const [round, setRound] = useState(0);
   const [closed, setClosed] = useState<CashRegister | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const allowed = me.user.role === "OWNER" || me.user.role === "ADMIN" || me.user.role === "CASHIER";
 
   const load = useCallback(
-    () => api<CashRegister[]>("/cash-registers").then(setRegisters, (err: unknown) => setError(errorMessage(err))),
+    () =>
+      Promise.all([api<CashRegister[]>("/cash-registers"), api<ActivityEntry[]>("/cash-registers/today")]).then(([list, log]) => {
+        setRegisters(list);
+        setToday(log);
+      }, (err: unknown) => setError(errorMessage(err))),
     [api],
   );
   useEffect(() => {
@@ -52,7 +60,6 @@ function CashRegisters({ me }: { me: Me }) {
   }
 
   const current = registers[0]?.status === "OPEN" ? registers[0] : undefined;
-  const history = registers.filter((r) => r.status === "CLOSED");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -60,12 +67,13 @@ function CashRegisters({ me }: { me: Me }) {
     setError(null);
     try {
       if (current) {
-        setClosed(await api<CashRegister>(`/cash-registers/${current.id}/close`, "POST", { actual_closing_cop: pesos(amount) }));
+        setClosed(await api<CashRegister>(`/cash-registers/${current.id}/close`, "POST", { actual_closing_cop: amount }));
       } else {
-        await api<CashRegister>("/cash-registers", "POST", { opening_amount_cop: pesos(amount) });
+        await api<CashRegister>("/cash-registers", "POST", { opening_amount_cop: amount });
         setClosed(null);
       }
-      setAmount("");
+      setAmount(0);
+      setRound((n) => n + 1);
       await load();
     } catch (err) {
       setError(errorMessage(err));
@@ -96,22 +104,14 @@ function CashRegisters({ me }: { me: Me }) {
             : "Ábrela con la base del día para empezar a cobrar."}
         </p>
 
-        <form onSubmit={submit} className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
-          <label className="block flex-1 sm:max-w-xs">
-            <span className="mb-1.5 block text-sm font-medium text-ink-2">{current ? "Efectivo contado" : "Base inicial"}</span>
-            <input
-              required
-              inputMode="numeric"
-              placeholder="$ 0"
-              value={amount ? cop(pesos(amount)) : ""}
-              onChange={(e) => setAmount(e.target.value)}
-              className={`${field} figures`}
-            />
-          </label>
-          <button type="submit" disabled={busy} className={button.primary}>
-            {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
-            {current ? "Cerrar caja" : "Abrir caja"}
-          </button>
+        <form onSubmit={submit} className="mt-5 space-y-4">
+          <CashKeypad key={round} label={current ? "Efectivo contado" : "Base inicial"} disabled={busy} onChange={setAmount} />
+          <div className="flex justify-end">
+            <button type="submit" disabled={busy} className={`${button.primary} w-full sm:w-auto`}>
+              {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
+              {current ? `Cerrar caja con ${cop(amount)}` : `Abrir caja con ${cop(amount)}`}
+            </button>
+          </div>
         </form>
         {error && (
           <p role="alert" className="mt-3 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">
@@ -120,42 +120,18 @@ function CashRegisters({ me }: { me: Me }) {
         )}
       </section>
 
-      <section aria-labelledby="historial">
-        <h2 id="historial" className="text-sm font-semibold text-ink-2">
-          Cierres anteriores
+      <section aria-labelledby="hoy">
+        <h2 id="hoy" className="text-sm font-semibold text-ink-2">
+          Aperturas y cierres de hoy
         </h2>
-        {history.length ? (
-          <div className="mt-3 overflow-x-auto rounded-panel border border-line bg-surface">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead className="border-b border-line text-muted">
-                <tr>
-                  <th className="px-5 py-3 font-medium">Cierre</th>
-                  <th className="px-5 py-3 font-medium">Abrió</th>
-                  <th className="px-5 py-3 text-right font-medium">Esperado</th>
-                  <th className="px-5 py-3 text-right font-medium">Contado</th>
-                  <th className="px-5 py-3 text-right font-medium">Diferencia</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {history.map((r) => {
-                  const diff = Number(r.actual_closing_cop) - Number(r.expected_closing_cop);
-                  return (
-                    <tr key={r.id}>
-                      <td className="px-5 py-3 first-letter:uppercase">{r.closed_at ? dateTime(r.closed_at) : "—"}</td>
-                      <td className="px-5 py-3 text-ink-2">{r.users?.full_name ?? "—"}</td>
-                      <td className="figures px-5 py-3 text-right">{cop(r.expected_closing_cop ?? 0)}</td>
-                      <td className="figures px-5 py-3 text-right">{cop(r.actual_closing_cop ?? 0)}</td>
-                      <td className={`figures px-5 py-3 text-right font-medium ${diff === 0 ? "text-success" : "text-danger"}`}>
-                        {diff === 0 ? "Cuadra" : `${diff > 0 ? "Sobran" : "Faltan"} ${cop(Math.abs(diff))}`}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        {today.length ? (
+          <ul className="mt-3 divide-y divide-line rounded-panel border border-line bg-surface">
+            {today.map((entry) => (
+              <ActivityLine key={entry.id} entry={entry} />
+            ))}
+          </ul>
         ) : (
-          <p className="mt-3 text-[15px] text-muted">Todavía no hay cierres en esta sede.</p>
+          <p className="mt-3 text-[15px] text-muted">Hoy todavía no se ha abierto ni cerrado la caja en esta sede.</p>
         )}
       </section>
     </div>
