@@ -2,6 +2,7 @@
 
 import { LoaderCircle, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { type ActivityEntry, ActivityLine } from "@/components/admin/activity";
 import { Dialog } from "@/components/dialog";
 import { button, choice, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
@@ -27,8 +28,8 @@ const same = (a: string, b: string) => fold(a.trim()) === fold(b.trim());
 /**
  * Inventory: ingredients (organization-wide) with their stock and alert minimum at the current location,
  * leaving out those only other locations use (Q43).
- * Sales deduct stock by recipe when an order is paid. OWNER/ADMIN manage ingredients; cashiers only receive
- * goods and count stock (Q39).
+ * Sales deduct stock by recipe when an order is paid. Only the owner manages ingredients (Q53); supervisors and
+ * cashiers receive goods and count stock (Q39). Owners and supervisors also see each ingredient's recent moves.
  */
 export function Inventory({ me }: { me: Me }) {
   const api = useApi();
@@ -39,7 +40,8 @@ export function Inventory({ me }: { me: Me }) {
   const [editing, setEditing] = useState<Ingredient | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const locationName = me.locations.find((l) => l.id === me.current_location_id)?.name ?? "esta sede";
-  const canManage = me.user.role === "OWNER" || me.user.role === "ADMIN";
+  const canManage = me.user.role === "OWNER";
+  const canSeeLog = canManage || me.user.role === "ADMIN";
 
   // The page remounts this screen when the location changes, so it loads once per location.
   useEffect(() => {
@@ -104,7 +106,7 @@ export function Inventory({ me }: { me: Me }) {
           {canManage ? (
             <>Todavía no hay ingredientes. Crea el primero con &ldquo;Nuevo ingrediente&rdquo; y luego úsalo en las recetas del catálogo.</>
           ) : (
-            "Todavía no hay ingredientes. El dueño o un admin los crea."
+            "Todavía no hay ingredientes. El dueño los crea."
           )}
         </p>
       ) : !shown.length ? (
@@ -150,6 +152,7 @@ export function Inventory({ me }: { me: Me }) {
           key={ingredient?.id ?? "new"}
           ingredient={ingredient}
           canManage={canManage}
+          canSeeLog={canSeeLog}
           stock={ingredient ? stock[ingredient.id] : undefined}
           taken={ingredients.filter((g) => g.id !== ingredient?.id).map((g) => g.name)}
           locationName={locationName}
@@ -169,12 +172,13 @@ export function Inventory({ me }: { me: Me }) {
 }
 
 /**
- * Create or edit an ingredient (name and unit, organization-wide; OWNER/ADMIN only) and update its stock at the
+ * Create or edit an ingredient (name and unit, organization-wide; owner only) and update its stock at the
  * current location: receive goods (adds) or count (sets), plus the alert minimum.
  */
 function IngredientForm({
   ingredient,
   canManage,
+  canSeeLog,
   stock,
   taken,
   locationName,
@@ -183,6 +187,7 @@ function IngredientForm({
 }: {
   ingredient?: Ingredient;
   canManage: boolean;
+  canSeeLog: boolean;
   stock?: LocationStock;
   taken: string[];
   locationName: string;
@@ -206,6 +211,12 @@ function IngredientForm({
   const created = useRef<string | null>(null);
   const receivedDone = useRef<LocationStock | null>(null);
   const shownUnit = unit.trim();
+  const [moves, setMoves] = useState<ActivityEntry[] | null>(null);
+
+  useEffect(() => {
+    if (!canSeeLog || !ingredient) return;
+    api<ActivityEntry[]>(`/activity?ingredient=${ingredient.id}&limit=5`).then(setMoves, () => undefined);
+  }, [api, canSeeLog, ingredient]);
 
   const problem = () => {
     if (canManage) {
@@ -353,6 +364,23 @@ function IngredientForm({
           </label>
         </div>
       </section>
+
+      {moves && (
+        <section aria-labelledby="moves-title" className="border-t border-line pt-5">
+          <h3 id="moves-title" className="mb-3 text-[15px] font-semibold">
+            Últimos movimientos
+          </h3>
+          {moves.length ? (
+            <ul className="divide-y divide-line rounded-panel border border-line">
+              {moves.map((entry) => (
+                <ActivityLine key={entry.id} entry={entry} withDate />
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted">Sin entradas ni conteos en {locationName} todavía.</p>
+          )}
+        </section>
+      )}
 
       {error && (
         <p role="alert" className="rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">

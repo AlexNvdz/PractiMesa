@@ -1,5 +1,6 @@
 import { Body, ConflictException, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
+import { logActivity } from '../activity/activity.controller';
 import { Roles } from '../common/guards/roles.guard';
 import { requireLocation } from '../common/tenant/tenant-context';
 import { MAX_COP, num, parseBody } from '../common/validation';
@@ -35,7 +36,9 @@ export class CashRegistersController {
       if (await tx.cash_registers.count({ where: { location_id: locationId, status: 'OPEN' } })) {
         throw new ConflictException('Ya hay una caja abierta en esta sede');
       }
-      return tx.cash_registers.create({ data: { ...data, location_id: locationId, opened_by: tenant.userId } });
+      const register = await tx.cash_registers.create({ data: { ...data, location_id: locationId, opened_by: tenant.userId } });
+      await logActivity(tx, tenant, locationId, 'REGISTER_OPEN', { register_id: register.id, opening_cop: register.opening_amount_cop.toString() });
+      return register;
     });
   }
 
@@ -56,7 +59,7 @@ export class CashRegistersController {
         _sum: { total_cop: true, tip_cop: true },
         where: { cash_register_id: id, payment_method: 'CASH', payment_status: 'PAID' },
       });
-      return tx.cash_registers.update({
+      const closed = await tx.cash_registers.update({
         where: { id },
         data: {
           ...data,
@@ -67,6 +70,12 @@ export class CashRegistersController {
             .plus(cash._sum.tip_cop ?? 0),
         },
       });
+      await logActivity(tx, tenant, locationId, 'REGISTER_CLOSE', {
+        register_id: id,
+        expected_cop: closed.expected_closing_cop!.toString(),
+        actual_cop: closed.actual_closing_cop!.toString(),
+      });
+      return closed;
     });
   }
 }
