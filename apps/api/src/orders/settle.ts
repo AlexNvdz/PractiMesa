@@ -13,6 +13,21 @@ export const ORDER_INCLUDE = {
   dining_tables: { select: { name: true } },
 } satisfies Prisma.ordersInclude;
 
+/** A round the kitchen or the floor still has to serve: not delivered, with a line that was not voided. */
+export const TO_SERVE = { status: { not: 'DELIVERED' }, order_items: { some: { voided_at: null } } } satisfies Prisma.order_roundsWhereInput;
+
+/** Orders the floor still deals with: open accounts, and paid ones whose food has not reached the table. */
+export const IN_SERVICE = {
+  status: { not: 'CANCELLED' },
+  OR: [{ payment_status: { not: 'PAID' } }, { order_rounds: { some: TO_SERVE } }],
+} satisfies Prisma.ordersWhereInput;
+
+/** A table is occupied while any order on it is in service; paying before the food arrives keeps it taken. */
+export async function syncTable(tx: Prisma.TransactionClient, tableId: string) {
+  const busy = await tx.orders.count({ where: { table_id: tableId, ...IN_SERVICE } });
+  await tx.dining_tables.update({ where: { id: tableId }, data: { status: busy ? 'OCCUPIED' : 'FREE' } });
+}
+
 export interface LockedOrder {
   order_type: string;
   table_id: string | null;
@@ -43,7 +58,7 @@ export async function lockOpenOrder(tx: Prisma.TransactionClient, id: string, lo
 
 /**
  * Marks a locked order paid: deducts its recipes from the location stock (may go negative), frees its table
- * and completes a table account (a counter order stays in the kitchen flow). Returns the order with the
+ * (once nothing is left to serve) and completes a table account (a counter order stays in the kitchen flow). Returns the order with the
  * ingredients left at or below their alert level.
  */
 export async function settleOrder(
@@ -69,11 +84,11 @@ export async function settleOrder(
      WHERE u.current_qty <= u.min_alert_qty
      ORDER BY g.name`;
 
-  if (order.table_id) await tx.dining_tables.update({ where: { id: order.table_id }, data: { status: 'FREE' } });
   const paid = await tx.orders.update({
     where: { id },
     data: { ...payment, payment_status: 'PAID', ...(order.order_type === 'DINE_IN' ? { status: 'COMPLETED' } : {}) },
     include: ORDER_INCLUDE,
   });
+  if (order.table_id) await syncTable(tx, order.table_id);
   return { ...paid, stock_alerts };
 }

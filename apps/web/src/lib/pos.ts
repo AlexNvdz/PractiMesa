@@ -166,3 +166,10 @@ export interface CashRegister {
 }
 
 export const isOpen = (o: Order) => o.payment_status !== "PAID" && o.status !== "CANCELLED";
+
+/** Rounds of an order still to serve: not delivered and with a line that was not voided. */
+export const roundsToServe = (o: Order) =>
+  o.order_rounds.filter((r) => r.status !== "DELIVERED" && o.order_items.some((i) => i.round === r.round && !i.voided_at));
+
+/** Paid before the food reached the table: Mesas keeps showing it until every round is delivered. */
+export const toServe = (o: Order) => o.payment_status === "PAID" && o.status !== "CANCELLED" && roundsToServe(o).length > 0;

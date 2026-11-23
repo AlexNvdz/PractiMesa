@@ -19,7 +19,7 @@ import { InvoicingService } from '../invoicing/invoicing.service';
 import { FactusPayService } from '../payments/factus-pay.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemInput, parseItems, priceItems, totals } from './order-items';
-import { LockedOrder, lockOpenOrder, ORDER_INCLUDE, settleOrder } from './settle';
+import { IN_SERVICE, LockedOrder, lockOpenOrder, ORDER_INCLUDE, settleOrder, syncTable } from './settle';
 
 /** Open account: not paid and not cancelled. */
 const OPEN = { payment_status: { not: 'PAID' }, status: { not: 'CANCELLED' } } satisfies Prisma.ordersWhereInput;
@@ -83,12 +83,12 @@ export class OrdersController {
     private readonly invoicing: InvoicingService,
   ) {}
 
-  /** Open accounts (not paid, not cancelled), newest first. */
+  /** Open accounts, and paid ones with rounds still to serve (Mesas shows them until delivered), newest first. */
   @Get()
   list(@Req() req: Request) {
     const tenant = req.tenant!;
     return this.prisma.forTenant(tenant.organizationId).orders.findMany({
-      where: { location_id: requireLocation(tenant), ...OPEN },
+      where: { location_id: requireLocation(tenant), ...IN_SERVICE },
       orderBy: { created_at: 'desc' },
       include: ORDER_INCLUDE,
     });
@@ -271,8 +271,7 @@ export class OrdersController {
     const why = voidReason(body);
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       const order = await lockOpenOrder(tx, id, locationId);
-      if (order.table_id) await tx.dining_tables.update({ where: { id: order.table_id }, data: { status: 'FREE' } });
-      return tx.orders.update({
+      const cancelled = await tx.orders.update({
         where: { id },
         data: {
           status: 'CANCELLED',
@@ -283,6 +282,8 @@ export class OrdersController {
         },
         include: ORDER_INCLUDE,
       });
+      if (order.table_id) await syncTable(tx, order.table_id);
+      return cancelled;
     });
   }
 }

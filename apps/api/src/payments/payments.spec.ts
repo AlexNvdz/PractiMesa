@@ -194,7 +194,8 @@ describe('QR payment with the shared account', () => {
     const order = await db.orders.findUniqueOrThrow({ where: { id: orderId } });
     expect(order).toMatchObject({ payment_status: 'PAID', status: 'COMPLETED', payment_method: 'FACTUS_PAY_QR' });
     expect(order.cash_register_id).not.toBeNull();
-    await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'FREE' });
+    // Paid, but its round is not served yet: the table stays taken until it is delivered.
+    await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'OCCUPIED' });
     await expect(db.webhook_events.count({ where: { external_event_id: orderId } })).resolves.toBe(1);
 
     expect((await webhook(`?key=${SHARED_KEY}`, orderId)).body).toEqual({ result: 'not pending' });
