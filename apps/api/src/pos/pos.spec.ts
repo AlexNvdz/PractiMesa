@@ -87,6 +87,15 @@ describe('cash registers', () => {
     expect((await cashierA1('POST', '/cash-registers', { opening_amount_cop: 0 })).status).toBe(201);
   });
 
+  it("lists today's openings and closings of the location with who did each", async () => {
+    const today = (await cashierA1('GET', '/cash-registers/today')).body;
+    expect(today.map((e: { kind: string }) => e.kind)).toEqual(['REGISTER_OPEN', 'REGISTER_CLOSE', 'REGISTER_OPEN']);
+    expect(today[1]).toMatchObject({ details: { register_id: registerId, actual_cop: '135000' }, users: { full_name: 'CASHIER' } });
+    // Location 2 only sees its own opening.
+    expect((await adminA2('GET', '/cash-registers/today')).body).toEqual([expect.objectContaining({ kind: 'REGISTER_OPEN' })]);
+    expect((await waiterA1('GET', '/cash-registers/today')).status).toBe(403);
+  });
+
   it('hides registers of other locations and organizations', async () => {
     const [open] = (await cashierA1('GET', '/cash-registers')).body;
     expect((await adminA2('POST', `/cash-registers/${open.id}/close`, { actual_closing_cop: 0 })).status).toBe(404);

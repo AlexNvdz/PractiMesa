@@ -7,6 +7,8 @@ import { MAX_COP, num, parseBody } from '../common/validation';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+const BOGOTA_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' });
+
 /** Cash registers of the request location (x-location-id). At most one is OPEN per location. */
 @Controller('cash-registers')
 @Roles('OWNER', 'ADMIN', 'CASHIER')
@@ -21,6 +23,23 @@ export class CashRegistersController {
       where: { location_id: requireLocation(tenant) },
       orderBy: { opened_at: 'desc' },
       take: 30,
+      include: { users: { select: { full_name: true } } },
+    });
+  }
+
+  /** Today's openings and closings of this location (Bogotá day), newest first, with who did each. Cashiers too. */
+  @Get('today')
+  today(@Req() req: Request) {
+    const tenant = req.tenant!;
+    const day = BOGOTA_DAY.format(new Date());
+    return this.prisma.forTenant(tenant.organizationId).activity_log.findMany({
+      where: {
+        location_id: requireLocation(tenant),
+        kind: { in: ['REGISTER_OPEN', 'REGISTER_CLOSE'] },
+        // Colombia has no daylight saving time: the day always starts at 00:00 UTC-5.
+        created_at: { gte: new Date(`${day}T00:00:00-05:00`) },
+      },
+      orderBy: { created_at: 'desc' },
       include: { users: { select: { full_name: true } } },
     });
   }
