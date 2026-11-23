@@ -4,6 +4,7 @@ import { requireLocation } from '../common/tenant/tenant-context';
 import { oneOf, parseBody } from '../common/validation';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { syncTable, TO_SERVE } from './settle';
 
 /**
  * Kitchen flow of a round, in order. A round moves forward and may skip steps (a drink goes straight to READY);
@@ -18,8 +19,12 @@ const STATE = { PENDING: 'pendiente', PREPARING: 'en preparación', READY: 'list
 const SERVERS = new Set(['CASHIER', 'WAITER']);
 
 const ROUND_INCLUDE = {
-  orders: { select: { order_number: true, order_type: true, status: true, dining_tables: { select: { name: true } } } },
-  order_items: { select: { id: true, quantity: true, selected_modifiers: true, notes: true, products: { select: { name: true } } } },
+  orders: { select: { order_number: true, order_type: true, status: true, table_id: true, dining_tables: { select: { name: true } } } },
+  // Voided lines stay on the ticket, crossed out, so the kitchen stops preparing them.
+  order_items: {
+    orderBy: { voided_at: { sort: 'asc', nulls: 'first' } },
+    select: { id: true, quantity: true, selected_modifiers: true, notes: true, voided_at: true, products: { select: { name: true } } },
+  },
 } satisfies Prisma.order_roundsInclude;
 
 /**
@@ -37,8 +42,7 @@ export class KitchenController {
     const tenant = req.tenant!;
     return this.prisma.forTenant(tenant.organizationId).order_rounds.findMany({
       where: {
-        status: { in: ['PENDING', 'PREPARING', 'READY'] },
-        order_items: { some: {} },
+        ...TO_SERVE,
         orders: { location_id: requireLocation(tenant), status: { not: 'CANCELLED' } },
       },
       orderBy: { created_at: 'asc' },
@@ -80,6 +84,8 @@ export class KitchenController {
       if (!round) throw new NotFoundException('Registro no encontrado');
       if (round.orders.status === 'CANCELLED') throw new ConflictException('El pedido fue anulado');
       if (round.status !== status) throw new ConflictException(`La comanda ya está ${STATE[round.status as Step]}`);
+      // A paid table account frees its table with its last delivery (and takes it back on undo).
+      if (round.orders.table_id && (status === 'DELIVERED' || from === 'DELIVERED')) await syncTable(tx, round.orders.table_id);
       return round;
     });
   }

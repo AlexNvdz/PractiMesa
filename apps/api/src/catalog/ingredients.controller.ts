@@ -41,21 +41,21 @@ export class IngredientsController {
   }
 
   @Post()
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   create(@Req() req: Request, @Body() body: unknown) {
     const data = parseBody<Prisma.ingredientsUncheckedCreateInput>(body, INGREDIENT, ['name', 'unit']);
     return this.prisma.forTenant(req.tenant!.organizationId).ingredients.create({ data });
   }
 
   @Patch(':id')
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   update(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const data = parseBody<Prisma.ingredientsUncheckedUpdateInput>(body, INGREDIENT);
     return this.prisma.forTenant(req.tenant!.organizationId).ingredients.update({ where: { id }, data });
   }
 
   @Delete(':id')
-  @Roles('OWNER', 'ADMIN')
+  @Roles('OWNER')
   @HttpCode(204)
   async remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     await this.prisma.forTenant(req.tenant!.organizationId).ingredients.delete({ where: { id } });

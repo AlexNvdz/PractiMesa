@@ -3,7 +3,6 @@ import {
   Body,
   ConflictException,
   Controller,
-  Delete,
   Get,
   NotFoundException,
   Param,
@@ -14,13 +13,13 @@ import {
 import type { Request } from 'express';
 import { Roles } from '../common/guards/roles.guard';
 import { requireLocation } from '../common/tenant/tenant-context';
-import { MAX_COP, num, oneOf, parseBody, uuid } from '../common/validation';
+import { MAX_COP, num, oneOf, parseBody, text, uuid } from '../common/validation';
 import { Prisma } from '../generated/prisma/client';
 import { InvoicingService } from '../invoicing/invoicing.service';
 import { FactusPayService } from '../payments/factus-pay.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ItemInput, parseItems, priceItems, totals } from './order-items';
-import { LockedOrder, lockOpenOrder, ORDER_INCLUDE, settleOrder } from './settle';
+import { IN_SERVICE, LockedOrder, lockOpenOrder, ORDER_INCLUDE, settleOrder, syncTable } from './settle';
 
 /** Open account: not paid and not cancelled. */
 const OPEN = { payment_status: { not: 'PAID' }, status: { not: 'CANCELLED' } } satisfies Prisma.ordersWhereInput;
@@ -36,6 +35,16 @@ const PAYMENT = {
 const QR_MIN_COP = 10_000;
 const QR_MAX_COP = 12_100_000;
 const QR_SECONDS = 1800;
+
+/** Why a line was voided or an order cancelled (Q61); OTHER needs a short note. */
+const VOID = { reason: oneOf('MISTAKE', 'NOT_WANTED', 'DELAY', 'OTHER'), note: text(120) };
+
+/** Reason of a void or a cancel; any role allowed to do it does it directly, under its own name. */
+function voidReason(body: unknown) {
+  const data = parseBody<{ reason: string; note?: string }>(body, VOID, ['reason']);
+  if (data.reason === 'OTHER' && !data.note) throw new BadRequestException('Escribe el motivo');
+  return { reason: data.reason, note: data.reason === 'OTHER' ? data.note! : null };
+}
 
 /** Locks an open account that can still change: a pending QR was issued for its exact amount. */
 async function lockEditableOrder(tx: Prisma.TransactionClient, id: string, locationId: string) {
@@ -74,12 +83,12 @@ export class OrdersController {
     private readonly invoicing: InvoicingService,
   ) {}
 
-  /** Open accounts (not paid, not cancelled), newest first. */
+  /** Open accounts, and paid ones with rounds still to serve (Mesas shows them until delivered), newest first. */
   @Get()
   list(@Req() req: Request) {
     const tenant = req.tenant!;
     return this.prisma.forTenant(tenant.organizationId).orders.findMany({
-      where: { location_id: requireLocation(tenant), ...OPEN },
+      where: { location_id: requireLocation(tenant), ...IN_SERVICE },
       orderBy: { created_at: 'desc' },
       include: ORDER_INCLUDE,
     });
@@ -216,15 +225,30 @@ export class OrdersController {
       .orders.update({ where: { id }, data: { factus_qr_payload: collection.qr }, include: ORDER_INCLUDE });
   }
 
-  /** Voids a line of an open account (a mistake, a dish the table no longer wants); totals drop by what it added. */
-  @Delete(':id/items/:itemId')
-  @Roles('OWNER', 'ADMIN', 'CASHIER')
-  voidItem(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Param('itemId', ParseUUIDPipe) itemId: string) {
+  /**
+   * Voids a line of an open account (a mistake, a dish the table no longer wants). The line stays, marked with
+   * who voided it, when and why; totals drop by what it added and the kitchen sees it crossed out.
+   */
+  @Post(':id/items/:itemId/void')
+  @Roles('OWNER', 'ADMIN', 'CASHIER', 'WAITER')
+  async voidItem(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Param('itemId', ParseUUIDPipe) itemId: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
+    const why = voidReason(body);
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       await lockEditableOrder(tx, id, locationId);
-      const item = await tx.order_items.delete({ where: { id: itemId, order_id: id } });
+      const item = await tx.order_items.findFirst({ where: { id: itemId, order_id: id } });
+      if (!item) throw new NotFoundException('Registro no encontrado');
+      if (item.voided_at) throw new ConflictException('Esa línea ya está anulada');
+      await tx.order_items.update({
+        where: { id: itemId },
+        data: {
+          voided_at: new Date(),
+          voided_by: tenant.userId,
+          void_reason: why.reason,
+          void_note: why.note,
+        },
+      });
       const sum = totals([item]);
       return tx.orders.update({
         where: { id },
@@ -238,16 +262,28 @@ export class OrdersController {
     });
   }
 
-  /** Cancels an unpaid order (no stock is deducted) and frees its table. */
+  /** Cancels an unpaid order (no stock is deducted) and frees its table; who, when and why are kept. */
   @Post(':id/cancel')
-  @Roles('OWNER', 'ADMIN', 'CASHIER')
-  cancel(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
+  @Roles('OWNER', 'ADMIN', 'CASHIER', 'WAITER')
+  async cancel(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
+    const why = voidReason(body);
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       const order = await lockOpenOrder(tx, id, locationId);
-      if (order.table_id) await tx.dining_tables.update({ where: { id: order.table_id }, data: { status: 'FREE' } });
-      return tx.orders.update({ where: { id }, data: { status: 'CANCELLED' }, include: ORDER_INCLUDE });
+      const cancelled = await tx.orders.update({
+        where: { id },
+        data: {
+          status: 'CANCELLED',
+          cancelled_at: new Date(),
+          cancelled_by: tenant.userId,
+          cancel_reason: why.reason,
+          cancel_note: why.note,
+        },
+        include: ORDER_INCLUDE,
+      });
+      if (order.table_id) await syncTable(tx, order.table_id);
+      return cancelled;
     });
   }
 }

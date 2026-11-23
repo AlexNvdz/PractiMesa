@@ -9,8 +9,11 @@ let orgA: TestOrg; // MULTI, 2 locations
 let orgB: TestOrg; // SINGLE
 let cashier1: Call; // location 1
 let waiter1: Call;
+let waiterId: string;
 let admin2: Call; // location 2
 let ownerB: Call;
+let super1: Call; // supervisor of location 1
+let supervisor1: string;
 let latte: string;
 let water: string;
 let coffee: string; // ingredient
@@ -48,11 +51,13 @@ beforeAll(async () => {
     ],
   });
   table = (await db.dining_tables.create({ data: { ...org, location_id: loc1, name: 'Mesa #1', number: 1 } })).id;
-  const waiter = await db.users.create({
+  waiterId = (await db.users.create({
     data: { ...org, email: `waiter-${orgA.id}@test.demo`, password_hash: 'x', full_name: 'Mesero', role: 'WAITER' },
-  });
+  })).id;
+  supervisor1 = (await db.users.create({ data: { ...org, full_name: 'Supervisora Uno', role: 'ADMIN', username: 'super.uno', allowed_location_ids: [loc1] } })).id;
+  super1 = await client(app, supervisor1, loc1);
   cashier1 = await client(app, orgA.users.CASHIER, loc1);
-  waiter1 = await client(app, waiter.id, loc1);
+  waiter1 = await client(app, waiterId, loc1);
   admin2 = await client(app, orgA.users.ADMIN, loc2);
   ownerB = await client(app, orgB.users.OWNER);
 });
@@ -163,7 +168,7 @@ describe('table accounts', () => {
     expect((await waiter1('GET', `/orders/${orderId}`)).body.dining_tables).toEqual({ name: 'Mesa #1' });
   });
 
-  it('charges into the open register, deducts stock and frees the table', async () => {
+  it('charges into the open register, deducts stock and frees the table once the food is served', async () => {
     expect((await waiter1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(403);
     expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(409); // no register
     expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CARD' })).status).toBe(400);
@@ -192,23 +197,42 @@ describe('table accounts', () => {
     const loc1 = orgA.locations[0];
     const coffeeQty = (await db.location_stock.findUnique({ where: { location_id_ingredient_id: { location_id: loc1, ingredient_id: coffee } } }))!.current_qty;
     expect(coffeeQty.toString()).toBe('964');
-    await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'FREE' });
 
     expect((await cashier1('POST', `/orders/${orderId}/pay`, { payment_method: 'CASH' })).status).toBe(409);
     expect((await waiter1('POST', `/orders/${orderId}/items`, { items: [{ product_id: water, quantity: 1 }] })).status).toBe(409);
-    expect((await cashier1('POST', `/orders/${orderId}/cancel`)).status).toBe(409);
-    expect((await waiter1('GET', '/orders')).body.map((o: { id: string }) => o.id)).not.toContain(orderId);
+    expect((await super1('POST', `/orders/${orderId}/cancel`, { reason: 'MISTAKE' })).status).toBe(409);
+
+    // Paid before the food came out: the table stays taken and Mesas still lists the account to serve it.
+    const listed = async () => (await waiter1('GET', '/orders')).body.map((o: { id: string }) => o.id);
+    const tableStatus = async () => (await db.dining_tables.findUniqueOrThrow({ where: { id: table } })).status;
+    expect(await listed()).toContain(orderId);
+    expect(await tableStatus()).toBe('OCCUPIED');
+    const [first, second] = paid.body.order_rounds as { id: string }[];
+    expect((await waiter1('PUT', `/kitchen/rounds/${first.id}`, { status: 'DELIVERED' })).status).toBe(200);
+    expect(await tableStatus()).toBe('OCCUPIED');
+    expect((await waiter1('PUT', `/kitchen/rounds/${second.id}`, { status: 'DELIVERED' })).status).toBe(200);
+    expect(await tableStatus()).toBe('FREE');
+    expect(await listed()).not.toContain(orderId);
+    // Undoing the last delivery takes the table back; delivering again frees it.
+    expect((await waiter1('PUT', `/kitchen/rounds/${second.id}`, { status: 'READY', from: 'DELIVERED' })).status).toBe(200);
+    expect(await tableStatus()).toBe('OCCUPIED');
+    await waiter1('PUT', `/kitchen/rounds/${second.id}`, { status: 'DELIVERED' });
+    expect(await tableStatus()).toBe('FREE');
 
     // Cash count of 2.5: opening 50000 + this cash sale 29000 + its tip 2634.
     const closed = await cashier1('POST', `/cash-registers/${register}/close`, { actual_closing_cop: 81634 });
     expect(closed.body.expected_closing_cop).toBe('81634');
   });
 
-  it('cancels an unpaid account without touching stock and frees the table', async () => {
+  it('cancels an unpaid account with a reason, without touching stock, and frees the table', async () => {
     const { body } = await waiter1('POST', '/orders', { order_type: 'DINE_IN', table_id: table, items: [bigLatte] });
-    expect((await waiter1('POST', `/orders/${body.id}/cancel`)).status).toBe(403);
-    const cancelled = await cashier1('POST', `/orders/${body.id}/cancel`);
+    expect((await waiter1('POST', `/orders/${body.id}/cancel`, {})).status).toBe(400);
+    const cancelled = await waiter1('POST', `/orders/${body.id}/cancel`, { reason: 'NOT_WANTED' });
     expect(cancelled.body.status).toBe('CANCELLED');
+    await expect(db.orders.findUnique({ where: { id: body.id } })).resolves.toMatchObject({
+      cancel_reason: 'NOT_WANTED',
+      cancelled_by: waiterId,
+    });
     await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'FREE' });
     const coffeeQty = (await db.location_stock.findUnique({
       where: { location_id_ingredient_id: { location_id: orgA.locations[0], ingredient_id: coffee } },
@@ -223,22 +247,44 @@ describe('table accounts', () => {
     expect(paid.body).toMatchObject({ payment_status: 'PAID', status: 'CONFIRMED', tip_cop: '1500', stock_alerts: [] });
   });
 
-  it('voids a line of an open account, only for cashiers and above', async () => {
+  it('a cashier voids a line directly with a reason; the line stays, crossed out of totals', async () => {
     const { body } = await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [bigLatte, { product_id: water, quantity: 1 }] });
     const line = body.order_items.find((i: { product_id: string }) => i.product_id === water).id;
-    expect((await waiter1('DELETE', `/orders/${body.id}/items/${line}`)).status).toBe(403);
+    const url = `/orders/${body.id}/items/${line}/void`;
+    expect((await cashier1('POST', url, { reason: 'OTHER' })).status).toBe(400);
+    expect((await cashier1('POST', url, { reason: 'TIRED' })).status).toBe(400);
 
-    const voided = await cashier1('DELETE', `/orders/${body.id}/items/${line}`);
-    expect(voided.status).toBe(200);
+    const voided = await cashier1('POST', url, { reason: 'OTHER', note: 'Se cayó' });
+    expect(voided.status).toBe(201);
     expect(voided.body).toMatchObject({ total_cop: '23000', tax_cop: '1703.7', subtotal_cop: '21296.3' });
-    expect(voided.body.order_items).toHaveLength(1);
-    expect((await cashier1('DELETE', `/orders/${body.id}/items/${line}`)).status).toBe(404);
+    expect(voided.body.order_items).toHaveLength(2);
+    expect(voided.body.order_items.find((i: { id: string }) => i.id === line)).toMatchObject({
+      void_reason: 'OTHER',
+      void_note: 'Se cayó',
+      voider: { full_name: 'CASHIER' },
+    });
+    expect((await super1('POST', url, { reason: 'MISTAKE' })).status).toBe(409);
 
     const other = (await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: water, quantity: 1 }] })).body;
     const otherLine = other.order_items[0].id;
-    expect((await cashier1('DELETE', `/orders/${body.id}/items/${otherLine}`)).status).toBe(404);
+    expect((await super1('POST', `/orders/${body.id}/items/${otherLine}/void`, { reason: 'MISTAKE' })).status).toBe(404);
     await cashier1('POST', `/orders/${other.id}/pay`, { payment_method: 'CASH' });
-    expect((await cashier1('DELETE', `/orders/${other.id}/items/${otherLine}`)).status).toBe(409);
+    expect((await super1('POST', `/orders/${other.id}/items/${otherLine}/void`, { reason: 'MISTAKE' })).status).toBe(409);
+  });
+
+  it('a supervisor voids too; a voided line is not deducted from stock when paid', async () => {
+    const stock = async () =>
+      (await db.location_stock.findUnique({ where: { location_id_ingredient_id: { location_id: orgA.locations[0], ingredient_id: coffee } } }))!.current_qty.toString();
+    const before = Number(await stock());
+    const { body } = await waiter1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: latte, quantity: 1, modifiers: [{ group: 'Tamaño', option: 'Pequeño' }] }] });
+    const round2 = (await waiter1('POST', `/orders/${body.id}/items`, { items: [{ product_id: latte, quantity: 3, modifiers: [{ group: 'Tamaño', option: 'Pequeño' }] }] })).body;
+    const extra = round2.order_items.find((i: { round: number }) => i.round === 2).id;
+    const voided = await super1('POST', `/orders/${body.id}/items/${extra}/void`, { reason: 'DELAY' });
+    expect(voided.status).toBe(201);
+    expect(await db.order_items.findUnique({ where: { id: extra } })).toMatchObject({ voided_by: supervisor1 });
+    await cashier1('POST', `/orders/${body.id}/pay`, { payment_method: 'CASH' });
+    // Only the 1 latte still on the account uses coffee (18 gr), not the 3 voided.
+    expect(Number(await stock())).toBe(before - 18);
   });
 
   it('hides orders of other locations and organizations', async () => {
@@ -246,7 +292,7 @@ describe('table accounts', () => {
     expect((await admin2('GET', `/orders/${body.id}`)).status).toBe(404);
     expect((await admin2('POST', `/orders/${body.id}/pay`, { payment_method: 'CASH' })).status).toBe(404);
     expect((await ownerB('GET', `/orders/${body.id}`)).status).toBe(404);
-    expect((await ownerB('POST', `/orders/${body.id}/cancel`)).status).toBe(404);
+    expect((await ownerB('POST', `/orders/${body.id}/cancel`, { reason: 'MISTAKE' })).status).toBe(404);
     expect((await ownerB('GET', '/orders')).body).toEqual([]);
   });
 });

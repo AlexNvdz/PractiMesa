@@ -113,10 +113,11 @@ describe('kitchen rounds', () => {
     const paid = (await cashier1('POST', '/orders', { order_type: 'PICKUP', ...line(soup) })).body;
     expect((await cashier1('POST', `/orders/${paid.id}/pay`, { payment_method: 'CASH' })).status).toBe(201);
     const cancelled = (await cashier1('POST', '/orders', { order_type: 'PICKUP', ...line(soup) })).body;
-    await cashier1('POST', `/orders/${cancelled.id}/cancel`);
+    const owner1 = await client(app, orgA.users.OWNER, orgA.locations[0]);
+    await owner1('POST', `/orders/${cancelled.id}/cancel`, { reason: 'MISTAKE' });
     const voided = (await cashier1('POST', `/orders/${order.id}/items`, line(soup))).body;
     const third = voided.order_items.find((i: { round: number }) => i.round === 3);
-    await cashier1('DELETE', `/orders/${order.id}/items/${third.id}`);
+    await owner1('POST', `/orders/${order.id}/items/${third.id}/void`, { reason: 'MISTAKE' });
 
     expect(ids(await kitchenRounds(kitchen1))).toEqual([order.order_rounds[1].id, paid.order_rounds[0].id]);
     const late = await kitchen1('PUT', `/kitchen/rounds/${cancelled.order_rounds[0].id}`, { status: 'READY' });
@@ -161,5 +162,19 @@ describe('kitchen rounds', () => {
     while (!seen.some((e) => e.id === order.id) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 25));
     unsubscribe();
     expect(seen).toContainEqual({ type: 'order', id: order.id, organization_id: orgA.id, location_id: orgA.locations[0] });
+  });
+});
+
+describe('voided lines (Q62)', () => {
+  it('stay on an undelivered ticket, crossed out, after the live ones', async () => {
+    const owner1 = await client(app, orgA.users.OWNER, orgA.locations[0]);
+    const two = (await cashier1('POST', '/orders', { order_type: 'PICKUP', items: [{ product_id: soup, quantity: 1 }, { product_id: soup, quantity: 2 }] })).body;
+    const [first] = two.order_items;
+    await owner1('POST', `/orders/${two.id}/items/${first.id}/void`, { reason: 'NOT_WANTED' });
+    const ticket = (await kitchen1('GET', '/kitchen/rounds')).body.find((r: { id: string }) => r.id === two.order_rounds[0].id);
+    expect(ticket.order_items.map((i: { id: string; voided_at: string | null }) => [i.id === first.id, i.voided_at !== null])).toEqual([
+      [false, false],
+      [true, true],
+    ]);
   });
 });

@@ -3,7 +3,7 @@
 import { ArrowLeft, Check, LoaderCircle, X } from "lucide-react";
 import { button } from "@/components/ui";
 import { cop } from "@/lib/format";
-import type { Order, OrderItem, OrderRound } from "@/lib/pos";
+import { liveItems, type Order, type OrderItem, type OrderRound, roundsToServe, VOID_REASONS } from "@/lib/pos";
 import { type DraftLine, linePrice, Stepper } from "./menu-picker";
 
 const modifiersOf = (picks: { option: string }[]) => picks.map((p) => p.option).join(" · ");
@@ -21,10 +21,13 @@ export function AccountPanel({
   title,
   subtitle,
   order,
+  served,
   draft,
   onDraft,
   canOrder,
+  canAdd,
   canCharge,
+  canVoid,
   composing,
   busy,
   error,
@@ -40,10 +43,16 @@ export function AccountPanel({
   title: string;
   subtitle: string;
   order?: Order;
+  /** Paid orders of this table (or counter) with food still to serve: only "Marcar entregada" applies. */
+  served: Order[];
   draft: DraftLine[];
   onDraft: (lines: DraftLine[]) => void;
   canOrder: boolean;
+  /** Start or extend an account from here (not on a paid counter order). */
+  canAdd: boolean;
   canCharge: boolean;
+  /** Void lines and cancel the account (cashiers and waiters with a supervisor's PIN). */
+  canVoid: boolean;
   composing: boolean;
   busy: boolean;
   error: string | null;
@@ -53,7 +62,7 @@ export function AccountPanel({
   onCharge: () => void;
   onVoid: (item: OrderItem) => void;
   onCancel: () => void;
-  onDeliver: (round: OrderRound) => void;
+  onDeliver: (order: Order, round: OrderRound) => void;
   extra?: React.ReactNode;
 }) {
   const pendingQr = order?.payment_status === "PENDING_QR";
@@ -87,20 +96,58 @@ export function AccountPanel({
       </header>
 
       <div className="min-h-32 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+        {served.map((paid) => (
+          <div key={paid.id} className="mb-5 border-b border-line pb-5 last:border-b-0 last:pb-0">
+            <p className="mb-3 text-sm text-muted">
+              Pedido #{paid.order_number} · <span className="font-medium text-success">Pagado</span> · falta servir
+            </p>
+            {roundsToServe(paid).map((r) => (
+              <div key={r.id} className="mb-4 last:mb-0">
+                <RoundHeading round={r.round} kitchen={r} canDeliver={canOrder} busy={busy} onDeliver={(k) => onDeliver(paid, k)} />
+                <ul className="space-y-2">
+                  {liveItems(paid.order_items)
+                    .filter((i) => i.round === r.round)
+                    .map((item) => (
+                      <li key={item.id} className="flex items-start gap-3">
+                        <span className="figures w-7 shrink-0 pt-px text-[15px] font-medium text-ink-2">{item.quantity}×</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[15px] leading-snug">{item.products.name}</p>
+                          {item.selected_modifiers.length > 0 && <p className="text-sm text-muted">{modifiersOf(item.selected_modifiers)}</p>}
+                        </div>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ))}
         {[...rounds].map(([round, items]) => (
           <div key={round} className="mb-5 last:mb-0">
-            <RoundHeading round={round} kitchen={kitchenState(round)} canDeliver={canOrder} busy={busy} onDeliver={onDeliver} />
+            <RoundHeading round={round} kitchen={kitchenState(round)} canDeliver={canOrder} busy={busy} onDeliver={(k) => onDeliver(order!, k)} />
             <ul className="space-y-3">
               {items.map((item) => (
-                <li key={item.id} className="flex items-start gap-3">
-                  <span className="figures w-7 shrink-0 pt-px text-[15px] font-medium text-ink-2">{item.quantity}×</span>
+                <li key={item.id} className={`flex items-start gap-3 ${item.voided_at ? "text-muted" : ""}`}>
+                  <span className={`figures w-7 shrink-0 pt-px text-[15px] font-medium ${item.voided_at ? "line-through" : "text-ink-2"}`}>
+                    {item.quantity}×
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-[15px] leading-snug">{item.products.name}</p>
-                    {item.selected_modifiers.length > 0 && <p className="text-sm text-muted">{modifiersOf(item.selected_modifiers)}</p>}
-                    {item.notes && <p className="text-sm text-muted">Nota: {item.notes}</p>}
+                    <p className={`text-[15px] leading-snug ${item.voided_at ? "line-through" : ""}`}>{item.products.name}</p>
+                    {item.voided_at ? (
+                      <p className="text-sm">
+                        Anulada · {item.void_reason === "OTHER" ? item.void_note : item.void_reason && VOID_REASONS[item.void_reason]}
+                        {item.voider && ` · ${item.voider.full_name}`}
+                      </p>
+                    ) : (
+                      <>
+                        {item.selected_modifiers.length > 0 && <p className="text-sm text-muted">{modifiersOf(item.selected_modifiers)}</p>}
+                        {item.notes && <p className="text-sm text-muted">Nota: {item.notes}</p>}
+                      </>
+                    )}
                   </div>
-                  <span className="figures pt-px text-[15px]">{cop(Number(item.unit_price_cop) * item.quantity)}</span>
-                  {canCharge && !pendingQr && (
+                  <span className={`figures pt-px text-[15px] ${item.voided_at ? "line-through" : ""}`}>
+                    {cop(Number(item.unit_price_cop) * item.quantity)}
+                  </span>
+                  {canVoid && !pendingQr && !item.voided_at && (
                     <button
                       type="button"
                       onClick={() => onVoid(item)}
@@ -140,7 +187,7 @@ export function AccountPanel({
           </div>
         )}
 
-        {!order && !draft.length && (
+        {!order && !draft.length && !served.length && (
           <p className="py-6 text-center text-[15px] text-muted">
             {canOrder ? "Agrega productos para abrir la cuenta." : "Sin cuenta abierta."}
           </p>
@@ -176,12 +223,12 @@ export function AccountPanel({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {canOrder && !pendingQr && !composing && (
+            {canAdd && !pendingQr && !composing && (
               <button type="button" onClick={onCompose} className={`${button.secondary} flex-1`}>
                 Agregar productos
               </button>
             )}
-            {canCharge && order && order.order_items.length > 0 && (
+            {canCharge && order && liveItems(order.order_items).length > 0 && (
               <button type="button" onClick={onCharge} className={`${button.primary} flex-1`}>
                 {pendingQr ? "Ver QR de pago" : `Cobrar ${cop(order.total_cop)}`}
               </button>
@@ -189,10 +236,10 @@ export function AccountPanel({
           </div>
         )}
 
-        {(extra || (canCharge && order && !draft.length)) && (
+        {(extra || (canVoid && order && !draft.length)) && (
           <div className="flex flex-wrap items-center justify-between gap-2">
             {extra}
-            {canCharge && order && !draft.length && (
+            {canVoid && order && !draft.length && (
               <button type="button" onClick={onCancel} className={`${button.quietDanger} ml-auto`}>
                 Anular cuenta
               </button>

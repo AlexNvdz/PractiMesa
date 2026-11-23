@@ -173,7 +173,8 @@ describe('QR payment with the shared account', () => {
     expect(fake.created.filter((c) => c.reference_code === orderId)).toHaveLength(1);
 
     expect((await cashierA('POST', `/orders/${orderId}/items`, { items: [{ product_id: water, quantity: 1 }] })).status).toBe(409);
-    expect((await cashierA('DELETE', `/orders/${orderId}/items/${body.order_items[0].id}`)).status).toBe(409);
+    const ownerA = await client(app, orgA.users.OWNER);
+    expect((await ownerA('POST', `/orders/${orderId}/items/${body.order_items[0].id}/void`, { reason: 'MISTAKE' })).status).toBe(409);
   });
 
   it('rejects webhooks without the right key or reference', async () => {
@@ -193,7 +194,8 @@ describe('QR payment with the shared account', () => {
     const order = await db.orders.findUniqueOrThrow({ where: { id: orderId } });
     expect(order).toMatchObject({ payment_status: 'PAID', status: 'COMPLETED', payment_method: 'FACTUS_PAY_QR' });
     expect(order.cash_register_id).not.toBeNull();
-    await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'FREE' });
+    // Paid, but its round is not served yet: the table stays taken until it is delivered.
+    await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'OCCUPIED' });
     await expect(db.webhook_events.count({ where: { external_event_id: orderId } })).resolves.toBe(1);
 
     expect((await webhook(`?key=${SHARED_KEY}`, orderId)).body).toEqual({ result: 'not pending' });

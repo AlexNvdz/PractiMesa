@@ -86,7 +86,23 @@ export interface OrderItem {
   notes: string | null;
   round: number;
   products: { name: string };
+  /** Voided lines stay on the account, out of totals (Q55). */
+  voided_at: string | null;
+  void_reason: VoidReason | null;
+  void_note: string | null;
+  voider?: { full_name: string } | null;
 }
+
+export type VoidReason = "MISTAKE" | "NOT_WANTED" | "DELAY" | "OTHER";
+export const VOID_REASONS: Record<VoidReason, string> = {
+  MISTAKE: "Error al pedir",
+  NOT_WANTED: "El cliente ya no lo quiere",
+  DELAY: "Demora",
+  OTHER: "Otro",
+};
+
+/** Lines still on the account (not voided). */
+export const liveItems = <T extends { voided_at: string | null }>(items: T[]) => items.filter((i) => !i.voided_at);
 
 /** Kitchen state of a round (comanda), in order. */
 export type RoundStatus = "PENDING" | "PREPARING" | "READY" | "DELIVERED";
@@ -128,7 +144,7 @@ export interface KitchenRound {
   status: Exclude<RoundStatus, "DELIVERED">;
   created_at: string;
   orders: { order_number: number; order_type: Order["order_type"]; dining_tables: { name: string } | null };
-  order_items: Pick<OrderItem, "id" | "quantity" | "selected_modifiers" | "notes" | "products">[];
+  order_items: Pick<OrderItem, "id" | "quantity" | "selected_modifiers" | "notes" | "products" | "voided_at">[];
 }
 
 export interface StockAlert {
@@ -150,3 +166,10 @@ export interface CashRegister {
 }
 
 export const isOpen = (o: Order) => o.payment_status !== "PAID" && o.status !== "CANCELLED";
+
+/** Rounds of an order still to serve: not delivered and with a line that was not voided. */
+export const roundsToServe = (o: Order) =>
+  o.order_rounds.filter((r) => r.status !== "DELIVERED" && o.order_items.some((i) => i.round === r.round && !i.voided_at));
+
+/** Paid before the food reached the table: Mesas keeps showing it until every round is delivered. */
+export const toServe = (o: Order) => o.payment_status === "PAID" && o.status !== "CANCELLED" && roundsToServe(o).length > 0;

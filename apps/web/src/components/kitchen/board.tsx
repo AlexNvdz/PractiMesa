@@ -46,7 +46,7 @@ const where = (r: KitchenRound) => r.orders.dining_tables?.name ?? `Para llevar 
  * Kitchen screen (KDS): one ticket per round, oldest first, in three lanes. Every terminal of the location
  * stays in sync over SSE; any order event reloads the board (one small query).
  */
-export function KitchenBoard() {
+export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
   const api = useApi();
   const now = useNow();
   const [rounds, setRounds] = useState<KitchenRound[] | null>(null);
@@ -144,6 +144,7 @@ export function KitchenBoard() {
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+        {readOnly && <p className="mr-auto text-sm text-muted">Solo vista: la cocina mueve las comandas.</p>}
         {sound && !audible && <p className="text-sm text-muted">Toca la pantalla una vez para oír las comandas nuevas.</p>}
         <button
           type="button"
@@ -173,7 +174,7 @@ export function KitchenBoard() {
                 <ul className="space-y-3">
                   {tickets.map((r) => (
                     <li key={r.id}>
-                      <Ticket round={r} lane={lane} now={now} busy={busy === r.id} onAdvance={() => void advance(r, lane.next)} />
+                      <Ticket round={r} lane={lane} now={now} busy={busy === r.id} onAdvance={readOnly ? undefined : () => void advance(r, lane.next)} />
                     </li>
                   ))}
                 </ul>
@@ -189,7 +190,7 @@ export function KitchenBoard() {
   );
 }
 
-function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; lane: Lane; now: number; busy: boolean; onAdvance: () => void }) {
+function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; lane: Lane; now: number; busy: boolean; onAdvance?: () => void }) {
   // Late = still not ready this long after it was sent; ready tickets wait on the floor, not the kitchen.
   const late = round.status !== "READY" && now - Date.parse(round.created_at) >= LATE_MINUTES * 60_000;
   return (
@@ -210,32 +211,45 @@ function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; la
         </div>
       </header>
       <ul className="space-y-3 px-4 py-4">
-        {round.order_items.map((item) => (
-          <li key={item.id} className="flex items-start gap-3">
-            <span className="figures w-8 shrink-0 text-lg font-semibold">{item.quantity}×</span>
-            <div className="min-w-0 flex-1">
-              <p className="text-lg leading-snug font-medium">{item.products.name}</p>
-              {item.selected_modifiers.length > 0 && (
-                <p className="text-[15px] text-ink-2">{item.selected_modifiers.map((m) => m.option).join(" · ")}</p>
-              )}
-              {item.notes && <p className="mt-1 rounded-control bg-warning-soft px-2 py-1 text-[15px] font-medium text-warning">{item.notes}</p>}
-            </div>
-          </li>
-        ))}
+        {round.order_items.map((item) =>
+          item.voided_at ? (
+            // Voided after it was sent (Q62): crossed out so nobody cooks it; the API lists these last.
+            <li key={item.id} className="flex items-start gap-3 text-muted">
+              <span className="figures w-8 shrink-0 text-lg font-semibold line-through">{item.quantity}×</span>
+              <p className="min-w-0 flex-1 text-lg leading-snug">
+                <span className="line-through">{item.products.name}</span>
+                <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 align-middle text-xs font-semibold text-danger">Anulada</span>
+              </p>
+            </li>
+          ) : (
+            <li key={item.id} className="flex items-start gap-3">
+              <span className="figures w-8 shrink-0 text-lg font-semibold">{item.quantity}×</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-lg leading-snug font-medium">{item.products.name}</p>
+                {item.selected_modifiers.length > 0 && (
+                  <p className="text-[15px] text-ink-2">{item.selected_modifiers.map((m) => m.option).join(" · ")}</p>
+                )}
+                {item.notes && <p className="mt-1 rounded-control bg-warning-soft px-2 py-1 text-[15px] font-medium text-warning">{item.notes}</p>}
+              </div>
+            </li>
+          ),
+        )}
       </ul>
-      <div className="px-4 pb-4">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={onAdvance}
-          // Bigger than the 44px default: tapped with wet hands, read from across the kitchen. Blue only for
-          // "Marcar lista", the step the floor waits for (One Blue Rule).
-          className={`${lane.status === "PREPARING" ? button.primary : button.secondary} h-14! w-full text-lg!`}
-        >
-          {busy && <LoaderCircle size={20} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
-          {lane.action}
-        </button>
-      </div>
+      {onAdvance && (
+        <div className="px-4 pb-4">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onAdvance}
+            // Bigger than the 44px default: tapped with wet hands, read from across the kitchen. Blue only for
+            // "Marcar lista", the step the floor waits for (One Blue Rule).
+            className={`${lane.status === "PREPARING" ? button.primary : button.secondary} h-14! w-full text-lg!`}
+          >
+            {busy && <LoaderCircle size={20} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
+            {lane.action}
+          </button>
+        </div>
+      )}
     </article>
   );
 }

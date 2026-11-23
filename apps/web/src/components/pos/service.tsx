@@ -15,16 +15,28 @@ import {
   type DiningTable,
   type Floor,
   isOpen,
+  liveItems,
   type LocationProduct,
   type MenuItem,
   type Order,
   type OrderItem,
   type OrderRound,
   type Product,
+  toServe,
 } from "@/lib/pos";
 import { AccountPanel } from "./account-panel";
 import { ChargeForm } from "./charge-dialog";
 import { type DraftLine, linePrice, MenuPicker } from "./menu-picker";
+import { type VoidBody, VoidForm } from "./void-dialog";
+
+/** A void or cancel waiting for its reason in the dialog. */
+interface Voiding {
+  title: string;
+  body: string;
+  action: string;
+  run: (data: VoidBody) => Promise<void>;
+}
+const units = (n: number) => (n === 1 ? "1 producto" : `${n} productos`);
 
 type Selection = { table: string } | { order: string } | { pickup: true } | null;
 
@@ -76,6 +88,7 @@ export function Service({ me }: { me: Me }) {
   const [mobilePanel, setMobilePanel] = useState(false);
   const [charging, setCharging] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
+  const [voiding, setVoiding] = useState<Voiding | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
@@ -87,9 +100,9 @@ export function Service({ me }: { me: Me }) {
       const [t, f, o] = await Promise.all([api<DiningTable[]>("/tables"), api<Floor[]>("/floors"), api<Order[]>("/orders")]);
       setTables(t);
       setFloors(f);
-      // Keep closed orders already on screen (a "Pago recibido" being shown); the list only has open ones.
+      // Keep closed orders already on screen (a "Pago recibido" being shown); the list has the ones in service.
       setOrders((all) => ({
-        ...Object.fromEntries(Object.entries(all).filter(([, order]) => !isOpen(order))),
+        ...Object.fromEntries(Object.entries(all).filter(([, order]) => !isOpen(order) && !toServe(order))),
         ...Object.fromEntries(o.map((order) => [order.id, order])),
       }));
       setLoadError(null);
@@ -139,13 +152,17 @@ export function Service({ me }: { me: Me }) {
     },
   );
 
-  const open = Object.values(orders).filter(isOpen);
-  const tableOrder = (tableId: string) => open.find((o) => o.table_id === tableId);
+  // In service = open accounts plus paid ones whose food has not reached the table yet.
+  const inService = Object.values(orders).filter((o) => isOpen(o) || toServe(o));
+  // The open account first: a paid table can order again while its first rounds are still cooking.
+  const tableOrders = (tableId: string) => inService.filter((o) => o.table_id === tableId).sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)));
   const table = selected && "table" in selected ? tables?.find((t) => t.id === selected.table) : undefined;
-  const order = selected && "order" in selected ? orders[selected.order] : table ? tableOrder(table.id) : undefined;
-  const account = order && isOpen(order) ? order : undefined;
-  const pickups = open.filter((o) => o.order_type === "PICKUP").sort((a, b) => a.order_number - b.order_number);
-  const hasSelection = selected !== null && (!("order" in selected) || account !== undefined);
+  const picked = selected && "order" in selected ? orders[selected.order] : undefined;
+  const here = picked ? [picked].filter((o) => isOpen(o) || toServe(o)) : table ? tableOrders(table.id) : [];
+  const account = here.find(isOpen);
+  const served = here.filter((o) => !isOpen(o));
+  const pickups = inService.filter((o) => o.order_type === "PICKUP").sort((a, b) => a.order_number - b.order_number);
+  const hasSelection = selected !== null && (!picked || here.length > 0);
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -195,26 +212,34 @@ export function Service({ me }: { me: Me }) {
       if (!table) setSelected({ order: saved.id });
     });
 
-  const voidItem = (item: OrderItem) =>
-    setConfirm({
-      title: `¿Anular ${item.quantity} × ${item.products.name}?`,
-      body: "Sale de la cuenta y el total baja en lo que sumaba.",
+  // The dialog shows the API's error (wrong PIN…) and stays open; it closes only when the void is done.
+  const voidItem = (item: OrderItem) => {
+    const orderId = account!.id;
+    setVoiding({
+      title: `Anular ${item.quantity} × ${item.products.name}`,
+      body: "Queda tachada en la cuenta, el total baja en lo que sumaba y cocina la ve anulada.",
       action: "Anular",
-      run: () => run(async () => put(await api<Order>(`/orders/${account!.id}/items/${item.id}`, "DELETE"))),
+      run: async (data) => {
+        put(await api<Order>(`/orders/${orderId}/items/${item.id}/void`, "POST", data));
+        setVoiding(null);
+      },
     });
+  };
 
-  const cancel = () =>
-    setConfirm({
-      title: `¿Anular la cuenta de ${table?.name ?? `pedido #${account!.order_number}`}?`,
+  const cancel = () => {
+    const orderId = account!.id;
+    setVoiding({
+      title: `Anular la cuenta de ${table?.name ?? `pedido #${account!.order_number}`}`,
       body: "Se cancela sin cobrar y no se descuenta inventario.",
       action: "Anular cuenta",
-      run: () =>
-        run(async () => {
-          put(await api<Order>(`/orders/${account!.id}/cancel`, "POST"));
-          setSelected(null);
-          setMobilePanel(false);
-        }),
+      run: async (data) => {
+        put(await api<Order>(`/orders/${orderId}/cancel`, "POST", data));
+        setVoiding(null);
+        setSelected(null);
+        setMobilePanel(false);
+      },
     });
+  };
 
   const setRound = (orderId: string, roundId: string, status: OrderRound["status"]) =>
     setOrders((all) => ({
@@ -222,13 +247,13 @@ export function Service({ me }: { me: Me }) {
       [orderId]: { ...all[orderId], order_rounds: all[orderId].order_rounds.map((r) => (r.id === roundId ? { ...r, status } : r)) },
     }));
 
-  const deliver = (round: OrderRound) =>
+  const deliver = (order: Order, round: OrderRound) =>
     run(async () => {
-      const orderId = account!.id;
+      const orderId = order.id;
       await api(`/kitchen/rounds/${round.id}`, "PUT", { status: "DELIVERED" });
       setRound(orderId, round.id, "DELIVERED");
       setUndo({
-        message: `${account!.dining_tables?.name ?? `Para llevar #${account!.order_number}`} · ronda ${round.round}: entregada`,
+        message: `${order.dining_tables?.name ?? `Para llevar #${order.order_number}`} · ronda ${round.round}: entregada`,
         run: () =>
           run(async () => {
             await api(`/kitchen/rounds/${round.id}`, "PUT", { status: "READY", from: "DELIVERED" });
@@ -251,10 +276,12 @@ export function Service({ me }: { me: Me }) {
     );
   }
 
-  const title = table?.name ?? (account ? `Para llevar #${account.order_number}` : "Para llevar");
+  const title = table?.name ?? (here[0] ? `Para llevar #${here[0].order_number}` : "Para llevar");
   const subtitle = account
     ? `Pedido #${account.order_number} · abierta hace ${elapsed(account.created_at, now)}`
-    : table
+    : served.length && !table
+      ? "Pagado · falta entregar"
+      : table
       ? `${STATUS_LABEL[table.status]} · ${table.capacity} puestos`
       : "Pedido nuevo";
   const charged = charging ? orders[charging] : undefined;
@@ -298,7 +325,7 @@ export function Service({ me }: { me: Me }) {
           <FloorMap
             tables={tables}
             floors={floors}
-            tableOrder={tableOrder}
+            tableOrders={tableOrders}
             pickups={pickups}
             selected={selected}
             now={now}
@@ -316,10 +343,14 @@ export function Service({ me }: { me: Me }) {
             title={title}
             subtitle={subtitle}
             order={account}
+            served={served}
             draft={draft}
             onDraft={setDraft}
             canOrder={canOrder}
+            // A paid counter order only waits to be handed over; new products would start another order.
+            canAdd={canOrder && !(picked && !account)}
             canCharge={canCharge}
+            canVoid={canOrder}
             composing={composing}
             busy={busy}
             error={error}
@@ -334,7 +365,7 @@ export function Service({ me }: { me: Me }) {
             onCancel={cancel}
             onDeliver={deliver}
             extra={
-              table && !account && canOrder ? (
+              table && !here.length && canOrder ? (
                 <button
                   type="button"
                   disabled={busy}
@@ -390,6 +421,18 @@ export function Service({ me }: { me: Me }) {
         )}
       </Dialog>
 
+      <Dialog open={voiding !== null} onClose={() => setVoiding(null)} title={voiding?.title ?? ""}>
+        {voiding && (
+          <VoidForm
+            key={voiding.title}
+            body={voiding.body}
+            action={voiding.action}
+            onSubmit={voiding.run}
+            onBack={() => setVoiding(null)}
+          />
+        )}
+      </Dialog>
+
       <UndoToast undo={undo} onClose={() => setUndo(null)} />
     </div>
   );
@@ -398,7 +441,7 @@ export function Service({ me }: { me: Me }) {
 function FloorMap({
   tables,
   floors,
-  tableOrder,
+  tableOrders,
   pickups,
   selected,
   now,
@@ -409,7 +452,7 @@ function FloorMap({
 }: {
   tables: DiningTable[] | null;
   floors: Floor[];
-  tableOrder: (tableId: string) => Order | undefined;
+  tableOrders: (tableId: string) => Order[];
   pickups: Order[];
   selected: Selection;
   now: number;
@@ -466,8 +509,9 @@ function FloorMap({
           {group.name && <h3 className="mb-3 text-sm font-semibold text-ink-2">{group.name}</h3>}
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {group.tables.map((t) => {
-              const order = tableOrder(t.id);
-              const items = order?.order_items.reduce((n, i) => n + i.quantity, 0) ?? 0;
+              const onTable = tableOrders(t.id);
+              const order = onTable[0];
+              const items = order ? liveItems(order.order_items).reduce((n, i) => n + i.quantity, 0) : 0;
               return (
                 <li key={t.id}>
                   <button
@@ -491,9 +535,10 @@ function FloorMap({
                         <>
                           <span className="figures block text-lg font-semibold tracking-[-0.01em]">{cop(order.total_cop)}</span>
                           <span className="figures block text-xs text-muted">
-                            {order.payment_status === "PENDING_QR" ? "QR pendiente" : `${items} productos`} · {elapsed(order.created_at, now)}
+                            {order.payment_status === "PENDING_QR" ? "QR pendiente" : isOpen(order) ? units(items) : "Pagada"} ·{" "}
+                            {elapsed(order.created_at, now)}
                           </span>
-                          {hasReady(order) && <span className="mt-1.5 block">{readyChip}</span>}
+                          {onTable.some(hasReady) && <span className="mt-1.5 block">{readyChip}</span>}
                         </>
                       ) : (
                         <span
@@ -527,7 +572,12 @@ function FloorMap({
                 >
                   <span className="figures text-[15px] font-semibold">#{o.order_number}</span>
                   <span className="figures flex-1 text-sm text-muted">
-                    {o.payment_status === "PENDING_QR" ? "QR pendiente" : `${o.order_items.reduce((n, i) => n + i.quantity, 0)} productos`} ·{" "}
+                    {o.payment_status === "PENDING_QR"
+                      ? "QR pendiente"
+                      : isOpen(o)
+                        ? units(liveItems(o.order_items).reduce((n, i) => n + i.quantity, 0))
+                        : "Pagado"}{" "}
+                    ·{" "}
                     {elapsed(o.created_at, now)}
                   </span>
                   {hasReady(o) && readyChip}

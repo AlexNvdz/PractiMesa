@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Req } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { Roles } from '../common/guards/roles.guard';
 import { requireLocation } from '../common/tenant/tenant-context';
@@ -28,12 +28,16 @@ export class LocationCatalogController {
       .location_products.findMany({ where: { location_id: requireLocation(tenant) } });
   }
 
+  /** Price and "sold here" are the owner's (Q53); a supervisor only marks a product sold out today. */
   @Put('location-products/:productId')
   @Roles('OWNER', 'ADMIN')
   setProduct(@Req() req: Request, @Param('productId', ParseUUIDPipe) productId: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const key = { location_id: requireLocation(tenant), product_id: productId };
     const data = parseBody<{ custom_price_cop?: number | null; is_available?: boolean; is_listed?: boolean }>(body, LOCATION_PRODUCT);
+    if (tenant.role !== 'OWNER' && (data.custom_price_cop !== undefined || data.is_listed !== undefined)) {
+      throw new ForbiddenException('Solo el dueño cambia precios y lo que se vende en cada sede');
+    }
     return this.prisma
       .forTenant(tenant.organizationId)
       .location_products.upsert({ where: { location_id_product_id: key }, create: { ...key, ...data }, update: data });
