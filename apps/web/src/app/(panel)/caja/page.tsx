@@ -38,7 +38,7 @@ function CashRegisters({ me }: { me: Me }) {
     if (allowed) void load();
   }, [allowed, load]);
 
-  if (!allowed) return <p className="text-[15px] text-muted">La caja la manejan el dueño, el administrador y los cajeros.</p>;
+  if (!allowed) return <p className="text-[15px] text-muted">La caja la manejan el dueño, el supervisor y los cajeros.</p>;
   if (!registers) {
     return error ? (
       <p role="alert" className="text-[15px] text-danger">

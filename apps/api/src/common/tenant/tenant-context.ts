@@ -11,8 +11,10 @@ export interface TenantContext {
   maxLocations: number;
   /** Resolved location for this request; undefined on org-level requests in MULTI orgs. */
   locationId?: string;
-  /** Active locations this user may operate. */
+  /** Active locations this user may operate (only the device's one in a PIN session). */
   locationIds: string[];
+  /** Authorized device of a PIN session (Q33); undefined for email sessions. */
+  deviceId?: string;
 }
 
 /** Location of a location-scoped request. TenantMiddleware already checked it against the user's locations. */

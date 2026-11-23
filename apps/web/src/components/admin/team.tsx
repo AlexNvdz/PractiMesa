@@ -1,12 +1,13 @@
 "use client";
 
-import { LoaderCircle, Plus } from "lucide-react";
+import { ChevronRight, LoaderCircle, Plus } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { FormAlert } from "@/components/form-alert";
 import { button, choice, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
-import { type Me, ROLE_LABEL, type Role, useAuth } from "@/lib/auth";
+import { type Me, ROLE_LABEL, type Role } from "@/lib/auth";
 import { fold } from "@/lib/format";
 
 interface User {
@@ -20,16 +21,15 @@ interface User {
   allowed_location_ids: string[];
   is_active: boolean;
   has_pin: boolean;
-  /** Whether the signed-in user may edit this one (Q42), decided by the API. */
-  can_manage: boolean;
 }
 
-const WORKERS: Role[] = ["CASHIER", "WAITER", "KITCHEN"];
+/** Roles the owner assigns; everyone but the owner signs in with username + PIN. */
+const STAFF: Role[] = ["ADMIN", "CASHIER", "WAITER", "KITCHEN"];
 const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
 const hintClass = "mt-1.5 block text-sm text-muted text-pretty";
 const badge = "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium";
 
-/** First given name + first family name, lowercase, no accents ("Alex Andrés" + "Navarro Díaz" → alex.navarro), Q30. */
+/** First given name + first family name, lowercase, no accents ("Ana María" + "Pérez Gómez" → ana.perez), Q30. */
 function suggestUsername(given: string, family: string, taken: Set<string>) {
   const first = (s: string) => fold(s.trim().split(/\s+/)[0] ?? "").replace(/[^a-z0-9]/g, "");
   const base = [first(given), first(family)].filter(Boolean).join(".").slice(0, 28);
@@ -39,10 +39,12 @@ function suggestUsername(given: string, family: string, taken: Set<string>) {
   return name;
 }
 
-/** Team (Q30–Q31, Q42): people of the business, their role, locations and PIN. */
+/**
+ * Team (owner only): people of the selected location (MULTI: those assigned there or to every location),
+ * with the owner first; the owner edits itself in Mi cuenta.
+ */
 export function Team({ me }: { me: Me }) {
   const api = useApi();
-  const { reloadMe } = useAuth();
   const [users, setUsers] = useState<User[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<User | "new" | null>(null);
@@ -66,6 +68,12 @@ export function Team({ me }: { me: Me }) {
   }
 
   const user = editing === "new" ? undefined : (editing ?? undefined);
+  const here = me.current_location_id;
+  const location = me.locations.find((l) => l.id === here);
+  const shown = users
+    .filter((u) => !multi || u.role === "OWNER" || !u.allowed_location_ids.length || (here && u.allowed_location_ids.includes(here)))
+    .sort((a, b) => Number(b.role === "OWNER") - Number(a.role === "OWNER"));
+  const active = shown.filter((u) => u.is_active).length;
   const where = (u: User) =>
     u.allowed_location_ids.length ? u.allowed_location_ids.map((id) => locationName.get(id) ?? "Otra sede").join(", ") : "Todas las sedes";
 
@@ -73,7 +81,8 @@ export function Team({ me }: { me: Me }) {
     <div>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <p className="figures text-sm text-muted">
-          {users.filter((u) => u.is_active).length} {users.filter((u) => u.is_active).length === 1 ? "persona activa" : "personas activas"}
+          {active} {active === 1 ? "persona activa" : "personas activas"}
+          {multi && location && ` en ${location.name}`}
         </p>
         <button type="button" onClick={() => setEditing("new")} className={`${button.primary} ml-auto pl-3.5`}>
           <Plus size={18} strokeWidth={2.25} aria-hidden />
@@ -82,7 +91,7 @@ export function Team({ me }: { me: Me }) {
       </div>
 
       <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
-        {users.map((u) => {
+        {shown.map((u) => {
           const content = (
             <>
               <span className="min-w-0 flex-1">
@@ -98,23 +107,26 @@ export function Team({ me }: { me: Me }) {
                 </span>
               </span>
               {!u.is_active && <span className={`${badge} bg-ground text-muted`}>Inactivo</span>}
-              {u.is_active && WORKERS.includes(u.role) && !u.has_pin && (
-                <span className={`${badge} bg-warning-soft text-warning`}>Sin PIN</span>
-              )}
+              {u.is_active && u.role !== "OWNER" && !u.has_pin && <span className={`${badge} bg-warning-soft text-warning`}>Sin PIN</span>}
             </>
           );
+          const row =
+            "flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground";
           return (
-            <li key={u.id}>
-              {u.can_manage ? (
-                <button
-                  type="button"
-                  onClick={() => setEditing(u)}
-                  className="flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground"
-                >
+            <li key={u.id} className="first:rounded-t-panel last:rounded-b-panel">
+              {u.role === "OWNER" ? (
+                // The owner's own data lives in Mi cuenta, not in this form.
+                <Link href="/mi-cuenta" className={row}>
+                  {content}
+                  <span className="flex shrink-0 items-center gap-1 text-sm text-muted">
+                    Mi cuenta
+                    <ChevronRight size={16} aria-hidden />
+                  </span>
+                </Link>
+              ) : (
+                <button type="button" onClick={() => setEditing(u)} className={row}>
                   {content}
                 </button>
-              ) : (
-                <div className="flex min-h-14 items-center gap-4 px-5 py-3">{content}</div>
               )}
             </li>
           );
@@ -127,13 +139,9 @@ export function Team({ me }: { me: Me }) {
           me={me}
           user={user}
           taken={new Set(users.filter((u) => u.id !== user?.id && u.username).map((u) => u.username!))}
-          onSaved={(changed) => {
-            // Whoever just saved a user may keep managing it.
-            const saved = { ...changed, can_manage: true };
+          onSaved={(saved) => {
             setUsers(user ? users.map((u) => (u.id === saved.id ? saved : u)) : [...users, saved]);
             setEditing(null);
-            // The header shows the signed-in user's name.
-            if (saved.id === me.user.id) void reloadMe();
           }}
         />
       </Dialog>
@@ -143,8 +151,6 @@ export function Team({ me }: { me: Me }) {
 
 function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Set<string>; onSaved: (user: User) => void }) {
   const api = useApi();
-  const self = user?.id === me.user.id;
-  const owner = me.user.role === "OWNER";
   const multi = me.organization.plan_tier === "MULTI";
   // Users from before names were split (sign-up owner, demo users): first word = given names, rest = family names.
   const [given, setGiven] = useState(user?.given_names ?? user?.full_name.split(" ")[0] ?? "");
@@ -153,18 +159,16 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
   // The username follows the names until the person edits it (Q30).
   const [usernameTouched, setUsernameTouched] = useState(Boolean(user?.username));
   const [role, setRole] = useState<Role>(user?.role ?? "CASHIER");
-  const [locations, setLocations] = useState<string[]>(user?.allowed_location_ids ?? (owner ? [] : [me.current_location_id ?? ""]));
-  const [email, setEmail] = useState(user?.email ?? "");
-  const [password, setPassword] = useState("");
+  // A new person starts at the location being viewed (MULTI); "Todas las sedes" stays one click away.
+  const [locations, setLocations] = useState<string[]>(
+    user?.allowed_location_ids ?? (multi && me.current_location_id ? [me.current_location_id] : []),
+  );
   const [pin, setPin] = useState("");
   const [active, setActive] = useState(user?.is_active ?? true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const shownUsername = usernameTouched ? username : suggestUsername(given, family, taken);
-  const isAdmin = role === "ADMIN";
-  const roles: Role[] = owner ? ["ADMIN", ...WORKERS] : WORKERS;
-  const fixedRole = self || user?.role === "OWNER";
   const allLocations = locations.length === 0;
 
   const save = async (event: React.FormEvent) => {
@@ -172,17 +176,18 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
     if (!given.trim() || !family.trim()) return setError("Escribe los nombres y los apellidos.");
     if (!/^[a-z0-9.]{3,30}$/.test(shownUsername)) return setError("El usuario lleva minúsculas, números y punto (de 3 a 30).");
     if (pin && !/^\d{4,6}$/.test(pin)) return setError("El PIN tiene de 4 a 6 dígitos.");
-    if (!user && !isAdmin && !pin) return setError("Asigna un PIN: con él entra a trabajar.");
-    if (multi && !self && !owner && allLocations) return setError("Elige al menos una sede.");
+    if (!user && !pin) return setError("Asigna un PIN: con él entra a trabajar.");
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = { given_names: given.trim(), family_names: family.trim(), username: shownUsername };
-      if (!fixedRole) body.role = role;
-      if (multi && !self && user?.role !== "OWNER") body.location_ids = locations;
-      if (isAdmin && owner && email.trim() !== (user?.email ?? "")) body.email = email.trim();
-      if (isAdmin && owner && password) body.password = password;
-      if (user && !self && active !== user.is_active) body.is_active = active;
+      const body: Record<string, unknown> = {
+        given_names: given.trim(),
+        family_names: family.trim(),
+        username: shownUsername,
+      };
+      body.role = role;
+      if (multi) body.location_ids = locations;
+      if (user && active !== user.is_active) body.is_active = active;
       let saved: User;
       if (user) {
         saved = await api<User>(`/users/${user.id}`, "PATCH", body);
@@ -191,7 +196,10 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
           saved = { ...saved, has_pin: true };
         }
       } else {
-        saved = await api<User>("/users", "POST", { ...body, ...(pin ? { pin } : {}) });
+        saved = await api<User>("/users", "POST", {
+          ...body,
+          ...(pin ? { pin } : {}),
+        });
       }
       onSaved(saved);
     } catch (err) {
@@ -212,7 +220,7 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
             onChange={(e) => setGiven(e.target.value)}
             maxLength={80}
             autoComplete="off"
-            placeholder="Alex Andrés"
+            placeholder="Nombres"
             className={field}
           />
         </label>
@@ -223,7 +231,7 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
             onChange={(e) => setFamily(e.target.value)}
             maxLength={80}
             autoComplete="off"
-            placeholder="Navarro Díaz"
+            placeholder="Apellidos"
             className={field}
           />
         </label>
@@ -245,38 +253,32 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
         </label>
       </div>
 
-      {fixedRole ? (
-        <p className="text-sm text-muted">Rol: {ROLE_LABEL[role]}</p>
-      ) : (
-        <fieldset>
-          <legend className={labelClass}>Rol</legend>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {roles.map((r) => (
-              <label key={r} className={choice}>
-                <input type="radio" name="role" checked={role === r} onChange={() => setRole(r)} className="sr-only" />
-                {ROLE_LABEL[r]}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      )}
+      <fieldset>
+        <legend className={labelClass}>Rol</legend>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {STAFF.map((r) => (
+            <label key={r} className={choice}>
+              <input type="radio" name="role" checked={role === r} onChange={() => setRole(r)} className="sr-only" />
+              {ROLE_LABEL[r]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
-      {multi && !self && user?.role !== "OWNER" && (
+      {multi && (
         <fieldset>
           <legend className={labelClass}>Sedes donde trabaja</legend>
           <div className="space-y-1">
-            {owner && (
-              <label className="flex min-h-11 items-center gap-3 text-[15px]">
-                <input
-                  type="checkbox"
-                  checked={allLocations}
-                  onChange={() => setLocations(allLocations ? [me.locations[0].id] : [])}
-                  className="size-5 accent-accent"
-                />
-                Todas las sedes
-                <span className="text-sm text-muted">(también las que abras después)</span>
-              </label>
-            )}
+            <label className="flex min-h-11 items-center gap-3 text-[15px]">
+              <input
+                type="checkbox"
+                checked={allLocations}
+                onChange={() => setLocations(allLocations ? [me.locations[0].id] : [])}
+                className="size-5 accent-accent"
+              />
+              Todas las sedes
+              <span className="text-sm text-muted">(también las que abras después)</span>
+            </label>
             {!allLocations &&
               me.locations.map((l) => (
                 <label key={l.id} className="flex min-h-11 items-center gap-3 text-[15px]">
@@ -294,39 +296,6 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
         </fieldset>
       )}
 
-      {isAdmin && owner && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className={labelClass}>Correo</span>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              maxLength={150}
-              autoComplete="off"
-              autoCapitalize="none"
-              spellCheck={false}
-              className={field}
-            />
-          </label>
-          <label className="block">
-            <span className={labelClass}>{user?.email ? "Nueva contraseña" : "Contraseña"}</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              maxLength={200}
-              autoComplete="new-password"
-              placeholder={user?.email ? "Déjala vacía para no cambiarla" : "Mínimo 8 caracteres"}
-              className={field}
-            />
-          </label>
-          <span className={`${hintClass} -mt-2 sm:col-span-2`}>
-            Los administradores entran con correo y contraseña; el PIN es opcional.
-          </span>
-        </div>
-      )}
-
       <label className="block">
         <span className={labelClass}>{user?.has_pin ? "Cambiar PIN" : "PIN"}</span>
         <input
@@ -341,7 +310,7 @@ function UserForm({ me, user, taken, onSaved }: { me: Me; user?: User; taken: Se
         <span className={hintClass}>Varias personas pueden tener el mismo PIN: lo que las distingue es el usuario.</span>
       </label>
 
-      {user && !self && (
+      {user && (
         <label className="flex min-h-11 items-center gap-3 text-[15px]">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="size-5 accent-accent" />
           Usuario activo

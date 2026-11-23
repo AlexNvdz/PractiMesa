@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertCircle, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, KeyRound, LoaderCircle, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
-import { button } from "@/components/ui";
-import { ApiError, type Role, useAuth } from "@/lib/auth";
+import { FormAlert } from "@/components/form-alert";
+import { button, field } from "@/components/ui";
+import { ApiError, ROLE_LABEL, type Role, useAuth } from "@/lib/auth";
 
 interface DemoOrganization {
   handle: string;
@@ -12,48 +13,63 @@ interface DemoOrganization {
   plan_tier: "SINGLE" | "MULTI";
 }
 
-const DEMO_ROLES: { role: Role; label: string }[] = [
-  { role: "OWNER", label: "Dueño" },
-  { role: "ADMIN", label: "Admin" },
-  { role: "CASHIER", label: "Cajero" },
-  { role: "WAITER", label: "Mesero" },
-  { role: "KITCHEN", label: "Cocina" },
-];
+type Device = { id: string; name: string; location: { id: string; name: string } };
+/** Step 1 answer: the business and, if this browser is one of its linked devices, that device. */
+interface Business {
+  handle: string;
+  name: string;
+  device: Device | null;
+}
+/** Step 2: PIN on a linked device; on another one, link it with a code or the owner signs in with email. */
+type Mode = "pin" | "unlinked" | "code" | "email";
 
+const DEMO_ROLES: Role[] = ["OWNER", "ADMIN", "CASHIER", "WAITER", "KITCHEN"];
 const START: Partial<Record<Role, string>> = { CASHIER: "/mesas", WAITER: "/mesas", KITCHEN: "/cocina" };
+/** The business typed on this browser, so the team skips step 1. */
+const HANDLE_KEY = "pm_handle";
+const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
 
-function messageFor(err: unknown): string {
+function messageFor(err: unknown, unauthorized = "Correo o contraseña incorrectos."): string {
   if (err instanceof ApiError) {
-    if (err.status === 401) return "Correo o contraseña incorrectos.";
-    if (err.status === 429) return "Demasiados intentos. Espera un minuto e inténtalo de nuevo.";
-    if (err.status === 400) return "Escribe tu correo y tu contraseña.";
+    if (err.status === 401) return err.detail && err.detail !== "Unauthorized" ? err.detail : unauthorized;
+    // The PIN lockout explains itself; the generic rate limit does not (and comes in English).
+    if (err.status === 429)
+      return err.detail?.startsWith("Demasiados") ? err.detail : "Demasiados intentos. Espera un minuto e inténtalo de nuevo.";
+    if (err.status === 400) return "Revisa los datos e inténtalo de nuevo.";
     if (err.detail && err.status < 500) return err.detail;
     return "Algo falló de nuestro lado. Inténtalo de nuevo en un momento.";
   }
   return "No pudimos conectar con el servidor. Revisa tu conexión e inténtalo de nuevo.";
 }
 
-// Infrequent icon swap: both icons stay mounted and cross-fade (scale and blur only when motion is allowed).
-const swap =
-  "col-start-1 row-start-1 transition-[opacity,scale,filter] duration-300 ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-opacity";
-const hidden = "opacity-0 scale-25 blur-[4px] motion-reduce:scale-100 motion-reduce:blur-none";
+const spinner = <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />;
 
 export default function LoginPage() {
-  const { status, me, login, demoLogin } = useAuth();
+  const { status, me, demoLogin } = useAuth();
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // undefined = still reading the remembered business; null = ask for it.
+  const [business, setBusiness] = useState<Business | null | undefined>(undefined);
+  const [mode, setMode] = useState<Mode>("pin");
   const [demo, setDemo] = useState<DemoOrganization[]>([]);
-  const errorId = useId();
+  const [demoError, setDemoError] = useState<string | null>(null);
   const demoId = useId();
 
   useEffect(() => {
     // Cashiers and waiters work on the table map, the kitchen on its screen; everyone else starts at the summary.
     if (status === "authenticated") router.replace(START[me?.user.role ?? "OWNER"] ?? "/");
   }, [status, me, router]);
+
+  const found = (b: Business) => {
+    localStorage.setItem(HANDLE_KEY, b.handle);
+    setMode(b.device ? "pin" : "unlinked");
+    setBusiness(b);
+  };
+
+  useEffect(() => {
+    const remembered = localStorage.getItem(HANDLE_KEY);
+    // Nothing remembered (or no longer found): ask for the handle.
+    (remembered ? lookup(remembered) : Promise.reject(new Error("none"))).then(found, () => setBusiness(null));
+  }, []);
 
   // The API answers 404 where demo login is off: then there are no demo buttons.
   useEffect(() => {
@@ -63,115 +79,58 @@ export default function LoginPage() {
   }, []);
 
   async function enterDemo(handle: string, role: Role) {
-    setError(null);
-    setSubmitting(true);
+    setDemoError(null);
     try {
       await demoLogin(handle, role);
     } catch (err) {
-      setError(messageFor(err));
-      setSubmitting(false);
+      setDemoError(messageFor(err));
     }
   }
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    setSubmitting(true);
-    try {
-      await login(email, password);
-    } catch (err) {
-      setError(messageFor(err));
-      setSubmitting(false);
-    }
-  }
-
-  const fieldClass =
-    "h-11 w-full rounded-control border border-line-strong bg-surface px-3 text-base text-ink placeholder:text-muted transition-[border-color] duration-150 hover:border-muted focus:border-accent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-accent aria-[invalid=true]:border-danger";
+  const change = () => {
+    localStorage.removeItem(HANDLE_KEY);
+    setBusiness(null);
+  };
 
   return (
-    <main className="flex min-h-dvh justify-center px-5 pt-[14vh] pb-12">
+    <main className="flex min-h-dvh justify-center px-5 pt-[12vh] pb-12">
       <div className="w-full max-w-[400px]">
         <p className="enter mb-8 text-center text-xl font-semibold tracking-[-0.02em]">PractiMesa</p>
 
-        <div className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">Inicia sesión</h1>
-          <p className="mt-1.5 text-[15px] text-muted">Entra al panel de tu restaurante.</p>
-
-          <form className="mt-7 space-y-5" onSubmit={onSubmit}>
-            <div className="space-y-1.5">
-              <label htmlFor="email" className="block text-sm font-medium text-ink-2">
-                Correo
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                inputMode="email"
-                autoComplete="username"
-                enterKeyHint="next"
-                autoCapitalize="none"
-                spellCheck={false}
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                aria-invalid={error ? true : undefined}
-                aria-describedby={error ? errorId : undefined}
-                className={fieldClass}
-                placeholder="tu@restaurante.com"
-              />
+        {/* Next keeps this page mounted (hidden) while the panel is open: remounting on every session change
+            clears typed PINs and passwords and the "Entrando…" state for the next person. */}
+        <div key={status} className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
+          {business === undefined && (
+            <div role="status" className="flex justify-center py-10 text-muted">
+              {spinner}
+              <span className="sr-only">Cargando…</span>
             </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="password" className="block text-sm font-medium text-ink-2">
-                Contraseña
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  enterKeyHint="done"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  aria-invalid={error ? true : undefined}
-                  aria-describedby={error ? errorId : undefined}
-                  className={`${fieldClass} pr-11`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
-                  aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
-                  aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-control text-muted transition-[color] duration-150 hover:text-ink"
-                >
-                  <Eye size={18} aria-hidden className={`${swap} ${showPassword ? hidden : ""}`} />
-                  <EyeOff size={18} aria-hidden className={`${swap} ${showPassword ? "" : hidden}`} />
+          )}
+          {business === null && <HandleStep onFound={found} />}
+          {business && (
+            <>
+              <div className="mb-6 flex items-start gap-3">
+                <div className="min-w-0 flex-1">
+                  <h1 className="truncate text-2xl font-semibold tracking-[-0.02em]">{business.name}</h1>
+                  <p className="mt-0.5 truncate text-[15px] text-muted">
+                    @{business.handle}
+                    {business.device && ` · ${business.device.location.name}`}
+                  </p>
+                </div>
+                <button type="button" onClick={change} className={`${button.ghost} -mt-1 -mr-3`}>
+                  Cambiar
                 </button>
               </div>
-            </div>
-
-            {error && (
-              <p
-                id={errorId}
-                role="alert"
-                className="flex items-start gap-2 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger"
-              >
-                <AlertCircle size={16} strokeWidth={2.25} className="mt-0.5 shrink-0" aria-hidden />
-                {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={submitting}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-control bg-accent text-[15px] font-medium text-white transition-[background-color,scale] duration-150 ease-out hover:bg-accent-strong disabled:cursor-wait disabled:opacity-80 motion-safe:enabled:active:scale-[0.96]"
-            >
-              {submitting && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
-              {submitting ? "Entrando…" : "Entrar"}
-            </button>
-          </form>
+              {mode === "pin" && <PinStep onEmail={() => setMode("email")} />}
+              {mode === "unlinked" && <UnlinkedStep onCode={() => setMode("code")} onEmail={() => setMode("email")} />}
+              {mode === "code" && (
+                <CodeStep handle={business.handle} onLinked={(device) => found({ ...business, device })} onBack={() => setMode("unlinked")} />
+              )}
+              {mode === "email" && (
+                <EmailStep handle={business.handle} linked={!!business.device} onBack={() => setMode(business.device ? "pin" : "unlinked")} />
+              )}
+            </>
+          )}
         </div>
 
         {demo.length > 0 && (
@@ -190,29 +149,341 @@ export default function LoginPage() {
                     {org.name} · {org.plan_tier === "SINGLE" ? "1 sede" : "varias sedes"}
                   </p>
                 )}
-                {/* Managers on the first row, the three staff roles on the second. */}
+                {/* Owner and supervisor on the first row, the three staff roles on the second. */}
                 <div className="grid grid-cols-6 gap-2">
-                  {DEMO_ROLES.map(({ role, label }) => (
+                  {DEMO_ROLES.map((role) => (
                     <button
                       key={role}
                       type="button"
-                      disabled={submitting}
                       onClick={() => void enterDemo(org.handle, role)}
                       className={`${button.secondary} ${role === "OWNER" || role === "ADMIN" ? "col-span-3" : "col-span-2 px-2"}`}
                     >
-                      {label}
+                      {ROLE_LABEL[role]}
                     </button>
                   ))}
                 </div>
               </div>
             ))}
+            {demoError && (
+              <div className="mt-4">
+                <FormAlert>{demoError}</FormAlert>
+              </div>
+            )}
           </section>
         )}
 
         <p className={`enter mt-6 text-center text-sm text-muted text-pretty ${demo.length ? "[--i:3]" : "[--i:2]"}`}>
-          ¿No tienes acceso? Pídele una cuenta al dueño de tu restaurante.
+          ¿No tienes usuario? Pídeselo al dueño de tu negocio.
         </p>
       </div>
     </main>
+  );
+}
+
+async function lookup(handle: string): Promise<Business> {
+  const res = await fetch(`/api/auth/business/${encodeURIComponent(handle)}`);
+  if (!res.ok) throw new ApiError(res.status);
+  return (await res.json()) as Business;
+}
+
+/** Link to the other way in, under the main button. */
+function SwitchLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <p className="text-center">
+      <button
+        type="button"
+        onClick={onClick}
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2 text-sm font-medium text-accent-strong underline-offset-2 hover:underline"
+      >
+        {children}
+      </button>
+    </p>
+  );
+}
+
+function HandleStep({ onFound }: { onFound: (business: Business) => void }) {
+  const [handle, setHandle] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!/^[A-Za-z0-9_]{3,30}$/.test(handle)) return setError("El identificador lleva letras, números y _ (de 3 a 30).");
+    setBusy(true);
+    setError(null);
+    try {
+      onFound(await lookup(handle));
+    } catch (err) {
+      setError(err instanceof ApiError && err.status === 404 ? "No encontramos ese negocio. Revisa el identificador." : messageFor(err));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">Inicia sesión</h1>
+      <p className="mt-1.5 text-[15px] text-muted">Escribe el identificador de tu negocio.</p>
+      <form className="mt-7 space-y-5" onSubmit={onSubmit} noValidate>
+        <label className="block">
+          <span className={labelClass}>Identificador</span>
+          <span className="relative block">
+            <span aria-hidden className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted">
+              @
+            </span>
+            <input
+              value={handle}
+              onChange={(e) => setHandle(e.target.value.replace(/^@/, "").trim())}
+              maxLength={30}
+              autoCapitalize="none"
+              autoComplete="organization"
+              spellCheck={false}
+              enterKeyHint="go"
+              placeholder="TuNegocio"
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? errorId : undefined}
+              className={`${field} pl-7`}
+            />
+          </span>
+        </label>
+        {error && <FormAlert id={errorId}>{error}</FormAlert>}
+        <button type="submit" disabled={busy} className={`${button.primary} w-full`}>
+          {busy && spinner}
+          Continuar
+        </button>
+      </form>
+    </>
+  );
+}
+
+/** Username + PIN on a linked device: the API finds the role and the location from the user and the device. */
+function PinStep({ onEmail }: { onEmail: () => void }) {
+  const { pinLogin } = useAuth();
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!username || pin.length < 4) return setError("Escribe tu usuario y tu PIN.");
+    setBusy(true);
+    setError(null);
+    try {
+      await pinLogin(username, pin);
+    } catch (err) {
+      setError(messageFor(err, "Usuario o PIN incorrecto."));
+      setPin("");
+      setBusy(false);
+    }
+  }
+
+  const invalid = error ? { "aria-invalid": true, "aria-describedby": errorId } : {};
+  return (
+    <form className="space-y-5" onSubmit={onSubmit} noValidate>
+      <label className="block">
+        <span className={labelClass}>Usuario</span>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value.toLowerCase().trim())}
+          maxLength={30}
+          autoCapitalize="none"
+          autoComplete="username"
+          spellCheck={false}
+          placeholder="usuario.ejemplo"
+          className={`${field} font-mono`}
+          {...invalid}
+        />
+      </label>
+      <label className="block">
+        <span className={labelClass}>PIN</span>
+        <input
+          type="password"
+          inputMode="numeric"
+          autoComplete="current-password"
+          enterKeyHint="go"
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          className={`${field} figures tracking-[0.3em]`}
+          {...invalid}
+        />
+      </label>
+      {error && <FormAlert id={errorId}>{error}</FormAlert>}
+      <button type="submit" disabled={busy} className={`${button.primary} w-full`}>
+        {busy && spinner}
+        {busy ? "Entrando…" : "Entrar"}
+      </button>
+      <SwitchLink onClick={onEmail}>¿Eres el dueño? Entra con tu correo</SwitchLink>
+    </form>
+  );
+}
+
+/** A browser that is not linked: the team cannot use PIN here until the owner links it. */
+function UnlinkedStep({ onCode, onEmail }: { onCode: () => void; onEmail: () => void }) {
+  return (
+    <div>
+      <p className="-mt-2 text-[15px] text-ink-2 text-pretty">
+        Este dispositivo no está vinculado. Para que tu equipo entre aquí con usuario y PIN, pídele al dueño un código de vinculación.
+      </p>
+      <div className="mt-6 space-y-3">
+        <button type="button" onClick={onCode} className={`${button.primary} w-full`}>
+          <KeyRound size={18} strokeWidth={2.25} aria-hidden />
+          Tengo un código de vinculación
+        </button>
+        <button type="button" onClick={onEmail} className={`${button.secondary} w-full`}>
+          <Mail size={18} strokeWidth={2.25} aria-hidden />
+          Soy el dueño: entrar con correo
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** One-time code from the owner: links this browser to the location and name the owner chose. */
+function CodeStep({ handle, onLinked, onBack }: { handle: string; onLinked: (device: Device) => void; onBack: () => void }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+  const hintId = useId();
+  const clean = code.replace("-", "");
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (clean.length !== 8) return setError("El código tiene 8 caracteres.");
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ handle, code: clean }),
+      });
+      const body = (await res.json().catch(() => null)) as (Device & { message?: unknown }) | null;
+      if (!res.ok) throw new ApiError(res.status, typeof body?.message === "string" ? body.message : undefined);
+      onLinked(body as Device);
+    } catch (err) {
+      setError(messageFor(err, "Código incorrecto o vencido. Pide al dueño uno nuevo."));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form className="space-y-5" onSubmit={onSubmit} noValidate>
+      <label className="block">
+        <span className={labelClass}>Código de vinculación</span>
+        <input
+          value={code}
+          // Shown as ABCD-EFGH, the way the owner sees it; the API ignores the dash.
+          onChange={(e) => {
+            const raw = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+            setCode(raw.length > 4 ? `${raw.slice(0, 4)}-${raw.slice(4)}` : raw);
+          }}
+          autoCapitalize="characters"
+          autoComplete="one-time-code"
+          spellCheck={false}
+          enterKeyHint="go"
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? `${hintId} ${errorId}` : hintId}
+          className={`${field} font-mono text-lg tracking-[0.2em]`}
+        />
+        <span id={hintId} className="mt-1.5 block text-sm text-muted text-pretty">
+          El dueño lo genera en Dispositivos. Sirve una sola vez y vence a los 10 minutos.
+        </span>
+      </label>
+      {error && <FormAlert id={errorId}>{error}</FormAlert>}
+      <button type="submit" disabled={busy} className={`${button.primary} w-full`}>
+        {busy && spinner}
+        {busy ? "Vinculando…" : "Vincular dispositivo"}
+      </button>
+      <SwitchLink onClick={onBack}>
+        <ArrowLeft size={16} strokeWidth={2.25} aria-hidden />
+        Volver
+      </SwitchLink>
+    </form>
+  );
+}
+
+/** Only the owner signs in with email + password, from any browser. */
+function EmailStep({ handle, linked, onBack }: { handle: string; linked: boolean; onBack: () => void }) {
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!email.trim() || !password) return setError("Escribe tu correo y tu contraseña.");
+    setBusy(true);
+    setError(null);
+    try {
+      await login(email, password, handle);
+    } catch (err) {
+      setError(messageFor(err));
+      setBusy(false);
+    }
+  }
+
+  const invalid = error ? { "aria-invalid": true, "aria-describedby": errorId } : {};
+  return (
+    <form className="space-y-5" onSubmit={onSubmit} noValidate>
+      <p className="-mt-2 text-sm text-muted text-pretty">Solo el dueño entra con correo. Tu equipo entra con usuario y PIN.</p>
+      <label className="block">
+        <span className={labelClass}>Correo</span>
+        <input
+          type="email"
+          inputMode="email"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="correo@ejemplo.com"
+          className={field}
+          {...invalid}
+        />
+      </label>
+      <label className="block">
+        <span className={labelClass}>Contraseña</span>
+        <span className="relative block">
+          <input
+            type={showPassword ? "text" : "password"}
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={`${field} pr-11`}
+            {...invalid}
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((v) => !v)}
+            aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+            aria-pressed={showPassword}
+            className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-control text-muted transition-[color] duration-150 hover:text-ink"
+          >
+            {showPassword ? <EyeOff size={18} aria-hidden /> : <Eye size={18} aria-hidden />}
+          </button>
+        </span>
+      </label>
+      {error && <FormAlert id={errorId}>{error}</FormAlert>}
+      <button type="submit" disabled={busy} className={`${button.primary} w-full`}>
+        {busy && spinner}
+        {busy ? "Entrando…" : "Entrar"}
+      </button>
+      <SwitchLink onClick={onBack}>
+        {linked ? (
+          "Entrar con usuario y PIN"
+        ) : (
+          <>
+            <ArrowLeft size={16} strokeWidth={2.25} aria-hidden />
+            Volver
+          </>
+        )}
+      </SwitchLink>
+    </form>
   );
 }

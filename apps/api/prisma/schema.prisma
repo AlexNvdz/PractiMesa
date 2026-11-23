@@ -125,6 +125,8 @@ model locations {
   created_at        DateTime            @default(now()) @db.Timestamptz(6)
   last_order_number Int                 @default(0)
   cash_registers    cash_registers[]
+  device_codes      device_codes[]
+  devices           devices[]
   dining_tables     dining_tables[]
   floors            floors[]
   location_products location_products[]
@@ -217,6 +219,8 @@ model organizations {
   suspended_at             DateTime?                  @db.Timestamptz(6)
   categories               categories[]
   customers                customers[]
+  device_codes             device_codes[]
+  devices                  devices[]
   ingredients              ingredients[]
   invitations              invitations[]
   locations                locations[]
@@ -296,7 +300,11 @@ model users {
   username             String?          @db.VarChar(30)
   pin_hash             String?
   is_active            Boolean          @default(true)
+  pin_failed_count     Int              @default(0)
+  pin_locked_until     DateTime?        @db.Timestamptz(6)
   cash_registers       cash_registers[]
+  device_codes         device_codes[]
+  devices              devices[]
   refresh_tokens       refresh_tokens[]
   organizations        organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -321,6 +329,8 @@ model refresh_tokens {
   expires_at DateTime  @db.Timestamptz(6)
   revoked_at DateTime? @db.Timestamptz(6)
   created_at DateTime  @default(now()) @db.Timestamptz(6)
+  device_id  String?   @db.Uuid
+  devices    devices?  @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_refresh_tokens_user")
@@ -395,4 +405,40 @@ model invitations {
   created_at      DateTime         @default(now()) @db.Timestamptz(6)
   platform_admins platform_admins? @relation(fields: [created_by], references: [id], onUpdate: NoAction)
   organizations   organizations?   @relation(fields: [organization_id], references: [id], onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model devices {
+  id              String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String           @default(dbgenerated("app_org_id()")) @db.Uuid
+  location_id     String           @db.Uuid
+  name            String           @db.VarChar(80)
+  token_hash      String           @unique
+  created_by      String           @db.Uuid
+  last_used_at    DateTime?        @db.Timestamptz(6)
+  created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  users           users            @relation(fields: [created_by, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "devices_created_by_fkey")
+  locations       locations        @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "devices_location_fkey")
+  organizations   organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  refresh_tokens  refresh_tokens[]
+
+  @@unique([id, organization_id], map: "devices_id_org_key")
+  @@index([organization_id], map: "idx_devices_org")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model device_codes {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String        @default(dbgenerated("app_org_id()")) @db.Uuid
+  location_id     String        @db.Uuid
+  name            String        @db.VarChar(80)
+  code_hash       String        @unique
+  created_by      String        @db.Uuid
+  expires_at      DateTime      @db.Timestamptz(6)
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  users           users         @relation(fields: [created_by, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "device_codes_created_by_fkey")
+  locations       locations     @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "device_codes_location_fkey")
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organization_id], map: "idx_device_codes_org")
 }
