@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ActivityController } from './activity/activity.controller';
 import { AuthController, LoginThrottlerGuard } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { MeController } from './auth/me.controller';
@@ -59,6 +60,7 @@ import { DevicesController } from './devices/devices.controller';
     LiveController,
     PlatformController,
     UsersController,
+    ActivityController,
     DevicesController,
   ],
   providers: [

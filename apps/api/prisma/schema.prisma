@@ -124,6 +124,7 @@ model locations {
   delivery_config   Json                @default("{\"zones\": [], \"enabled\": true, \"min_order_cop\": 15000}")
   created_at        DateTime            @default(now()) @db.Timestamptz(6)
   last_order_number Int                 @default(0)
+  activity_log      activity_log[]
   cash_registers    cash_registers[]
   device_codes      device_codes[]
   devices           devices[]
@@ -227,6 +228,7 @@ model organizations {
   ai_agent_enabled         Boolean                    @default(false)
   created_at               DateTime                   @default(now()) @db.Timestamptz(6)
   suspended_at             DateTime?                  @db.Timestamptz(6)
+  activity_log             activity_log[]
   categories               categories[]
   customers                customers[]
   device_codes             device_codes[]
@@ -296,29 +298,30 @@ model reservations {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model users {
-  id                                                                String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
-  organization_id                                                   String           @default(dbgenerated("app_org_id()")) @db.Uuid
-  email                                                             String?          @unique @db.VarChar(150)
-  password_hash                                                     String?
-  full_name                                                         String           @db.VarChar(120)
-  role                                                              String           @db.VarChar(30)
-  allowed_location_ids                                              String[]         @db.Uuid
-  created_at                                                        DateTime         @default(now()) @db.Timestamptz(6)
-  phone                                                             String?          @db.VarChar(30)
-  given_names                                                       String?          @db.VarChar(80)
-  family_names                                                      String?          @db.VarChar(80)
-  username                                                          String?          @db.VarChar(30)
-  pin_hash                                                          String?
-  is_active                                                         Boolean          @default(true)
-  pin_failed_count                                                  Int              @default(0)
-  pin_locked_until                                                  DateTime?        @db.Timestamptz(6)
-  cash_registers                                                    cash_registers[]
-  device_codes                                                      device_codes[]
-  devices                                                           devices[]
-  order_items_order_items_voided_by_organization_idTousers          order_items[]    @relation("order_items_voided_by_organization_idTousers")
-  orders_orders_cancelled_by_organization_idTousers                 orders[]         @relation("orders_cancelled_by_organization_idTousers")
-  refresh_tokens                                                    refresh_tokens[]
-  organizations                                                     organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                                                       String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id                                          String           @default(dbgenerated("app_org_id()")) @db.Uuid
+  email                                                    String?          @unique @db.VarChar(150)
+  password_hash                                            String?
+  full_name                                                String           @db.VarChar(120)
+  role                                                     String           @db.VarChar(30)
+  allowed_location_ids                                     String[]         @db.Uuid
+  created_at                                               DateTime         @default(now()) @db.Timestamptz(6)
+  phone                                                    String?          @db.VarChar(30)
+  given_names                                              String?          @db.VarChar(80)
+  family_names                                             String?          @db.VarChar(80)
+  username                                                 String?          @db.VarChar(30)
+  pin_hash                                                 String?
+  is_active                                                Boolean          @default(true)
+  pin_failed_count                                         Int              @default(0)
+  pin_locked_until                                         DateTime?        @db.Timestamptz(6)
+  activity_log                                             activity_log[]
+  cash_registers                                           cash_registers[]
+  device_codes                                             device_codes[]
+  devices                                                  devices[]
+  order_items_order_items_voided_by_organization_idTousers order_items[]    @relation("order_items_voided_by_organization_idTousers")
+  orders_orders_cancelled_by_organization_idTousers        orders[]         @relation("orders_cancelled_by_organization_idTousers")
+  refresh_tokens                                           refresh_tokens[]
+  organizations                                            organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([id, organization_id], map: "users_id_org_key")
   @@unique([organization_id, username], map: "users_org_username_key")
@@ -453,4 +456,23 @@ model device_codes {
   organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([organization_id], map: "idx_device_codes_org")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model activity_log {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  organization_id String        @default(dbgenerated("app_org_id()")) @db.Uuid
+  location_id     String        @db.Uuid
+  user_id         String        @db.Uuid
+  kind            String        @db.VarChar(20)
+  ingredient_id   String?       @db.Uuid
+  details         Json          @default("{}")
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  locations       locations     @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "activity_log_location_fkey")
+  organizations   organizations @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [user_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "activity_log_user_fkey")
+
+  @@index([ingredient_id, created_at(sort: Desc)], map: "idx_activity_log_ingredient")
+  @@index([location_id, created_at(sort: Desc)], map: "idx_activity_log_location")
 }
