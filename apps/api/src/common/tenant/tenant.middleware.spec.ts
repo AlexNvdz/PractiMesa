@@ -12,6 +12,7 @@ function dbUser(overrides: Partial<{ allowed_location_ids: string[]; locations: 
   return {
     id: 'user-a',
     role: 'CASHIER',
+    is_active: true,
     allowed_location_ids: overrides.allowed_location_ids ?? [],
     organizations: {
       id: 'org-a',
@@ -61,6 +62,11 @@ describe('TenantMiddleware', () => {
     const user = dbUser();
     const { mw } = setup({ ...user, organizations: { ...user.organizations, suspended_at: new Date() } });
     await expect(mw.use(req(await token()), res, jest.fn())).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('rejects deactivated users', async () => {
+    const { mw } = setup({ ...dbUser(), is_active: false });
+    await expect(mw.use(req(await token()), res, jest.fn())).rejects.toThrow('desactivado');
   });
 
   it('rejects tokens of deleted users', async () => {

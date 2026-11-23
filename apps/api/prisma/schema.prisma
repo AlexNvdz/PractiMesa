@@ -284,18 +284,24 @@ model reservations {
 model users {
   id                   String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
   organization_id      String           @default(dbgenerated("app_org_id()")) @db.Uuid
-  email                String           @unique @db.VarChar(150)
-  password_hash        String
+  email                String?          @unique @db.VarChar(150)
+  password_hash        String?
   full_name            String           @db.VarChar(120)
   role                 String           @db.VarChar(30)
   allowed_location_ids String[]         @db.Uuid
   created_at           DateTime         @default(now()) @db.Timestamptz(6)
   phone                String?          @db.VarChar(30)
+  given_names          String?          @db.VarChar(80)
+  family_names         String?          @db.VarChar(80)
+  username             String?          @db.VarChar(30)
+  pin_hash             String?
+  is_active            Boolean          @default(true)
   cash_registers       cash_registers[]
   refresh_tokens       refresh_tokens[]
   organizations        organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([id, organization_id], map: "users_id_org_key")
+  @@unique([organization_id, username], map: "users_org_username_key")
 }
 
 model webhook_events {

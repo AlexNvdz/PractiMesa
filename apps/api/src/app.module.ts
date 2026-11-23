@@ -30,6 +30,7 @@ import { TablesController } from './pos/tables.controller';
 import { PlatformController } from './platform/platform.controller';
 import { PlatformGuard } from './platform/platform.guard';
 import { PrismaService } from './prisma/prisma.service';
+import { UsersController } from './users/users.controller';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { PrismaService } from './prisma/prisma.service';
     InvoicingController,
     LiveController,
     PlatformController,
+    UsersController,
   ],
   providers: [
     PrismaService,

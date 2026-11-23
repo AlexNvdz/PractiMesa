@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 export type Role = "OWNER" | "ADMIN" | "CASHIER" | "WAITER" | "KITCHEN";
 
 export interface Me {
-  user: { id: string; full_name: string; email: string; role: Role };
+  user: { id: string; full_name: string; email: string | null; role: Role };
   organization: { id: string; name: string; handle: string; plan_tier: "SINGLE" | "MULTI"; max_locations: number };
   locations: { id: string; name: string; city: string }[];
   current_location_id: string | null;
