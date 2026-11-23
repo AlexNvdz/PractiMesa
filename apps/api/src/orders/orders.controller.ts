@@ -3,7 +3,6 @@ import {
   Body,
   ConflictException,
   Controller,
-  ForbiddenException,
   Get,
   NotFoundException,
   Param,
@@ -12,9 +11,8 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { AuthService } from '../auth/auth.service';
 import { Roles } from '../common/guards/roles.guard';
-import { requireLocation, type TenantContext } from '../common/tenant/tenant-context';
+import { requireLocation } from '../common/tenant/tenant-context';
 import { MAX_COP, num, oneOf, parseBody, text, uuid } from '../common/validation';
 import { Prisma } from '../generated/prisma/client';
 import { InvoicingService } from '../invoicing/invoicing.service';
@@ -39,22 +37,13 @@ const QR_MAX_COP = 12_100_000;
 const QR_SECONDS = 1800;
 
 /** Why a line was voided or an order cancelled (Q61); OTHER needs a short note. */
-const VOID = {
-  reason: oneOf('MISTAKE', 'NOT_WANTED', 'DELAY', 'OTHER'),
-  note: text(120),
-  authorization: (v: unknown) => typeof v === 'object' && v !== null,
-};
-const AUTHORIZATION = {
-  username: (v: unknown) => typeof v === 'string' && /^[a-z0-9.]{3,30}$/.test(v),
-  pin: (v: unknown) => typeof v === 'string' && /^\d{4,6}$/.test(v),
-};
-/** Roles that void or cancel only with a supervisor's (or the owner's) username + PIN (Q54). */
-const NEEDS_APPROVAL = new Set(['CASHIER', 'WAITER']);
+const VOID = { reason: oneOf('MISTAKE', 'NOT_WANTED', 'DELAY', 'OTHER'), note: text(120) };
 
-interface VoidInput {
-  reason: string;
-  note?: string;
-  authorization?: object;
+/** Reason of a void or a cancel; any role allowed to do it does it directly, under its own name. */
+function voidReason(body: unknown) {
+  const data = parseBody<{ reason: string; note?: string }>(body, VOID, ['reason']);
+  if (data.reason === 'OTHER' && !data.note) throw new BadRequestException('Escribe el motivo');
+  return { reason: data.reason, note: data.reason === 'OTHER' ? data.note! : null };
 }
 
 /** Locks an open account that can still change: a pending QR was issued for its exact amount. */
@@ -92,24 +81,7 @@ export class OrdersController {
     private readonly prisma: PrismaService,
     private readonly factusPay: FactusPayService,
     private readonly invoicing: InvoicingService,
-    private readonly auth: AuthService,
   ) {}
-
-  /**
-   * Reason + who authorizes a void or a cancel: owners and supervisors authorize themselves, cashiers and
-   * waiters need a supervisor of this location (or the owner) present, one authorization per action (Q60).
-   */
-  private async approval(tenant: TenantContext, locationId: string, body: unknown) {
-    const data = parseBody<VoidInput>(body, VOID, ['reason']);
-    if (data.reason === 'OTHER' && !data.note) throw new BadRequestException('Escribe el motivo');
-    let authorizedBy = tenant.userId;
-    if (NEEDS_APPROVAL.has(tenant.role)) {
-      if (!data.authorization) throw new ForbiddenException('Un supervisor o el dueño debe autorizar con su usuario y PIN');
-      const who = parseBody<{ username: string; pin: string }>(data.authorization, AUTHORIZATION, ['username', 'pin']);
-      authorizedBy = await this.auth.approver(tenant.organizationId, locationId, who.username, who.pin);
-    }
-    return { reason: data.reason, note: data.reason === 'OTHER' ? data.note! : null, by: tenant.userId, authorizedBy };
-  }
 
   /** Open accounts (not paid, not cancelled), newest first. */
   @Get()
@@ -255,14 +227,14 @@ export class OrdersController {
 
   /**
    * Voids a line of an open account (a mistake, a dish the table no longer wants). The line stays, marked with
-   * who asked, who authorized, when and why; totals drop by what it added and the kitchen sees it crossed out.
+   * who voided it, when and why; totals drop by what it added and the kitchen sees it crossed out.
    */
   @Post(':id/items/:itemId/void')
   @Roles('OWNER', 'ADMIN', 'CASHIER', 'WAITER')
   async voidItem(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Param('itemId', ParseUUIDPipe) itemId: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
-    const approval = await this.approval(tenant, locationId, body);
+    const why = voidReason(body);
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       await lockEditableOrder(tx, id, locationId);
       const item = await tx.order_items.findFirst({ where: { id: itemId, order_id: id } });
@@ -272,10 +244,9 @@ export class OrdersController {
         where: { id: itemId },
         data: {
           voided_at: new Date(),
-          voided_by: approval.by,
-          void_authorized_by: approval.authorizedBy,
-          void_reason: approval.reason,
-          void_note: approval.note,
+          voided_by: tenant.userId,
+          void_reason: why.reason,
+          void_note: why.note,
         },
       });
       const sum = totals([item]);
@@ -291,13 +262,13 @@ export class OrdersController {
     });
   }
 
-  /** Cancels an unpaid order (no stock is deducted) and frees its table; who, who authorized and why are kept. */
+  /** Cancels an unpaid order (no stock is deducted) and frees its table; who, when and why are kept. */
   @Post(':id/cancel')
   @Roles('OWNER', 'ADMIN', 'CASHIER', 'WAITER')
   async cancel(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
-    const approval = await this.approval(tenant, locationId, body);
+    const why = voidReason(body);
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       const order = await lockOpenOrder(tx, id, locationId);
       if (order.table_id) await tx.dining_tables.update({ where: { id: order.table_id }, data: { status: 'FREE' } });
@@ -306,10 +277,9 @@ export class OrdersController {
         data: {
           status: 'CANCELLED',
           cancelled_at: new Date(),
-          cancelled_by: approval.by,
-          cancel_authorized_by: approval.authorizedBy,
-          cancel_reason: approval.reason,
-          cancel_note: approval.note,
+          cancelled_by: tenant.userId,
+          cancel_reason: why.reason,
+          cancel_note: why.note,
         },
         include: ORDER_INCLUDE,
       });

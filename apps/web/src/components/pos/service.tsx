@@ -28,7 +28,7 @@ import { ChargeForm } from "./charge-dialog";
 import { type DraftLine, linePrice, MenuPicker } from "./menu-picker";
 import { type VoidBody, VoidForm } from "./void-dialog";
 
-/** A void or cancel waiting for its reason (and authorization) in the dialog. */
+/** A void or cancel waiting for its reason in the dialog. */
 interface Voiding {
   title: string;
   body: string;
@@ -36,8 +36,6 @@ interface Voiding {
   run: (data: VoidBody) => Promise<void>;
 }
 const units = (n: number) => (n === 1 ? "1 producto" : `${n} productos`);
-/** Cashiers and waiters void and cancel only with a supervisor's or the owner's PIN (Q54). */
-const NEEDS_APPROVAL = new Set(["CASHIER", "WAITER"]);
 
 type Selection = { table: string } | { order: string } | { pickup: true } | null;
 
@@ -419,7 +417,6 @@ export function Service({ me }: { me: Me }) {
             key={voiding.title}
             body={voiding.body}
             action={voiding.action}
-            needsApproval={NEEDS_APPROVAL.has(me.user.role)}
             onSubmit={voiding.run}
             onBack={() => setVoiding(null)}
           />

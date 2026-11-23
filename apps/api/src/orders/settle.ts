@@ -7,7 +7,6 @@ export const ORDER_INCLUDE = {
     include: {
       products: { select: { name: true } },
       voider: { select: { full_name: true } },
-      void_authorizer: { select: { full_name: true } },
     },
   },
   order_rounds: { orderBy: { round: 'asc' }, select: { id: true, round: true, status: true } },

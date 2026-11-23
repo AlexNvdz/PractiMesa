@@ -104,7 +104,7 @@ export function AccountPanel({
                     {item.voided_at ? (
                       <p className="text-sm">
                         Anulada · {item.void_reason === "OTHER" ? item.void_note : item.void_reason && VOID_REASONS[item.void_reason]}
-                        {item.void_authorizer && ` · autorizó ${item.void_authorizer.full_name}`}
+                        {item.voider && ` · ${item.voider.full_name}`}
                       </p>
                     ) : (
                       <>

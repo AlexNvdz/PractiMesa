@@ -153,13 +153,11 @@ model order_items {
   tax_rate           Decimal      @default(0) @db.Decimal(5, 2)
   voided_at          DateTime?    @db.Timestamptz(6)
   voided_by          String?      @db.Uuid
-  void_authorized_by String?      @db.Uuid
   void_reason        String?      @db.VarChar(20)
   void_note          String?      @db.VarChar(120)
   orders             orders       @relation(fields: [order_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "order_items_order_fkey")
   products           products     @relation(fields: [product_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "order_items_product_fkey")
   order_rounds       order_rounds @relation(fields: [order_id, round, organization_id], references: [order_id, round, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "order_items_round_fkey")
-  void_authorizer    users?       @relation("order_items_void_authorized_by_organization_idTousers", fields: [void_authorized_by, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "order_items_void_authorized_by_fkey")
   voider             users?       @relation("order_items_voided_by_organization_idTousers", fields: [voided_by, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "order_items_voided_by_fkey")
 }
 
@@ -198,12 +196,10 @@ model orders {
   factus_pdf_url        String?
   cancelled_at          DateTime?       @db.Timestamptz(6)
   cancelled_by          String?         @db.Uuid
-  cancel_authorized_by  String?         @db.Uuid
   cancel_reason         String?         @db.VarChar(20)
   cancel_note           String?         @db.VarChar(120)
   order_items           order_items[]
   order_rounds          order_rounds[]
-  cancel_authorizer     users?          @relation("orders_cancel_authorized_by_organization_idTousers", fields: [cancel_authorized_by, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_cancel_authorized_by_fkey")
   canceller             users?          @relation("orders_cancelled_by_organization_idTousers", fields: [cancelled_by, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_cancelled_by_fkey")
   cash_registers        cash_registers? @relation(fields: [cash_register_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_cash_register_fkey")
   customers             customers?      @relation(fields: [customer_id, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_customer_fkey")
@@ -319,9 +315,7 @@ model users {
   cash_registers                                                    cash_registers[]
   device_codes                                                      device_codes[]
   devices                                                           devices[]
-  order_items_order_items_void_authorized_by_organization_idTousers order_items[]    @relation("order_items_void_authorized_by_organization_idTousers")
   order_items_order_items_voided_by_organization_idTousers          order_items[]    @relation("order_items_voided_by_organization_idTousers")
-  orders_orders_cancel_authorized_by_organization_idTousers         orders[]         @relation("orders_cancel_authorized_by_organization_idTousers")
   orders_orders_cancelled_by_organization_idTousers                 orders[]         @relation("orders_cancelled_by_organization_idTousers")
   refresh_tokens                                                    refresh_tokens[]
   organizations                                                     organizations    @relation(fields: [organization_id], references: [id], onDelete: Cascade, onUpdate: NoAction)

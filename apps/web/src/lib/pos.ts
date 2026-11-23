@@ -91,7 +91,6 @@ export interface OrderItem {
   void_reason: VoidReason | null;
   void_note: string | null;
   voider?: { full_name: string } | null;
-  void_authorizer?: { full_name: string } | null;
 }
 
 export type VoidReason = "MISTAKE" | "NOT_WANTED" | "DELAY" | "OTHER";

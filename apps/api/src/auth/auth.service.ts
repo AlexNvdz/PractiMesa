@@ -129,20 +129,6 @@ export class AuthService {
     return this.issue(user.id, device.id);
   }
 
-  /**
-   * Who authorizes a blocked action at a location (Q54, Q56): the owner, or a supervisor of that location (or of
-   * every location), active and with a PIN. Same lockout as login; any failure reads "Usuario o PIN incorrecto".
-   */
-  async approver(organizationId: string, locationId: string, username: string, pin: string): Promise<string> {
-    const user = await this.prisma.users.findFirst({ where: { organization_id: organizationId, username, is_active: true } });
-    const allowed =
-      !!user &&
-      (user.role === 'OWNER' || (user.role === 'ADMIN' && (!user.allowed_location_ids.length || user.allowed_location_ids.includes(locationId))));
-    // 403, not 401: the web client reads 401 as an expired session.
-    if (!(await this.checkPin(user, pin, allowed)) || !user) throw new ForbiddenException(PIN_WRONG);
-    return user.id;
-  }
-
   /** Device of a browser token at an active location (optionally of one business). */
   private device(token: string | undefined, organizationId?: string) {
     if (!token) return Promise.resolve(null);
