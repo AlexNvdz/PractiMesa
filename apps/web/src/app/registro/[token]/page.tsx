@@ -2,6 +2,7 @@
 
 import { LoaderCircle } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
+import { Logo } from "@/components/logo";
 import { useEffect, useId, useState } from "react";
 import { FormAlert } from "@/components/form-alert";
 import { button, field } from "@/components/ui";
@@ -102,13 +103,14 @@ export default function RegistroPage() {
   );
 
   return (
-    <main className="flex min-h-dvh justify-center px-5 pt-[8vh] pb-12">
-      <div className="w-full max-w-[560px]">
-        <p className="enter mb-8 text-center text-xl font-semibold tracking-[-0.02em]">PractiMesa</p>
+    <main className="relative flex min-h-dvh justify-center bg-surface px-5 pt-[8vh] pb-12">
+      <div aria-hidden className="login-canvas" />
+      <div className="relative w-full max-w-[560px]">
+        <Logo size={44} className="enter mb-8 justify-center text-[26px]" />
 
         {invitation ? (
-          <div className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
-            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">Crea tu negocio</h1>
+          <div className="enter rounded-sheet border border-transparent bg-surface p-7 shadow-panel ring-1 ring-ink/5 [--i:1] sm:p-8">
+            <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-balance">Crea tu negocio</h1>
             <p className="mt-1.5 text-[15px] text-muted text-pretty">
               Te invitaron al plan{" "}
               {invitation.plan_tier === "SINGLE" ? "Pequeño (1 sede)" : `Multilocal (hasta ${invitation.max_locations} sedes)`}. Al terminar
@@ -206,8 +208,8 @@ export default function RegistroPage() {
             </form>
           </div>
         ) : (
-          <div role="alert" className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
-            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">Esta invitación ya no sirve</h1>
+          <div role="alert" className="enter rounded-sheet border border-transparent bg-surface p-7 shadow-panel ring-1 ring-ink/5 [--i:1] sm:p-8">
+            <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-balance">Esta invitación ya no sirve</h1>
             <p className="mt-1.5 text-[15px] text-muted text-pretty">
               El enlace no existe, ya se usó o venció (dura 24 horas). Pídele uno nuevo a quien te invitó a PractiMesa.
             </p>

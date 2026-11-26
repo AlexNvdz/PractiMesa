@@ -10,11 +10,12 @@ import { elapsed } from "@/lib/format";
 import { useLive } from "@/lib/live";
 import type { KitchenRound, RoundStatus } from "@/lib/pos";
 
+// `tab` = short name for the phone selector; `count` colours the lane count like the round state.
 const LANES = [
-  { status: "PENDING", title: "Por preparar", empty: "Nada en cola.", action: "Empezar", next: "PREPARING" },
-  { status: "PREPARING", title: "En preparación", empty: "Nada en preparación.", action: "Marcar lista", next: "READY" },
-  { status: "READY", title: "Listas para servir", empty: "Nada esperando.", action: "Entregada", next: "DELIVERED" },
-] as const satisfies { status: KitchenRound["status"]; title: string; empty: string; action: string; next: RoundStatus }[];
+  { status: "PENDING", title: "Por preparar", tab: "Nuevas", empty: "Nada en cola.", action: "Empezar", next: "PREPARING", count: "border border-line-strong bg-surface text-ink-2" },
+  { status: "PREPARING", title: "En preparación", tab: "Preparando", empty: "Nada en preparación.", action: "Marcar lista", next: "READY", count: "bg-accent text-white" },
+  { status: "READY", title: "Listas para servir", tab: "Listas", empty: "Nada esperando.", action: "Entregada", next: "DELIVERED", count: "bg-ready text-ready-ink" },
+] as const satisfies { status: KitchenRound["status"]; title: string; tab: string; empty: string; action: string; next: RoundStatus; count: string }[];
 
 type Lane = (typeof LANES)[number];
 const DONE = { PREPARING: "en preparación", READY: "lista", DELIVERED: "entregada" } as const;
@@ -59,6 +60,8 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
   const audio = useRef<AudioContext | null>(null);
   const seen = useRef<Set<string> | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
+  // Phone: one lane at a time.
+  const [shown, setShown] = useState<Lane["status"]>("PENDING");
 
   // Browsers keep audio muted until the person interacts with the page; any tap unlocks it.
   useEffect(() => {
@@ -161,14 +164,29 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
           {error}
         </p>
       )}
-      <div className="grid gap-8 lg:grid-cols-3 lg:gap-5">
+      {/* Phone: pick the lane; the three lanes side by side from 640px (scrolling sideways on narrow tablets). */}
+      <div role="group" aria-label="Carril" className="mb-4 grid grid-cols-3 gap-1 rounded-full bg-line/60 p-1 sm:hidden">
+        {LANES.map((lane) => (
+          <button
+            key={lane.status}
+            type="button"
+            aria-pressed={shown === lane.status}
+            onClick={() => setShown(lane.status)}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-full text-sm font-semibold text-ink-2 transition-[background-color,color] duration-150 aria-pressed:bg-surface aria-pressed:text-ink aria-pressed:shadow-sm"
+          >
+            {lane.tab}
+            <span className="figures text-muted">{rounds.filter((r) => r.status === lane.status).length}</span>
+          </button>
+        ))}
+      </div>
+      <div className="sm:grid sm:snap-x sm:snap-mandatory sm:grid-cols-[repeat(3,minmax(260px,1fr))] sm:gap-4 sm:overflow-x-auto sm:pb-2 lg:gap-5">
         {LANES.map((lane) => {
           const tickets = rounds.filter((r) => r.status === lane.status);
           return (
-            <section key={lane.status} aria-labelledby={`lane-${lane.status}`}>
-              <h2 id={`lane-${lane.status}`} className="mb-3 flex items-baseline gap-2 text-sm font-semibold text-ink-2">
+            <section key={lane.status} aria-labelledby={`lane-${lane.status}`} className={`min-w-0 snap-start ${shown === lane.status ? "" : "max-sm:hidden"}`}>
+              <h2 id={`lane-${lane.status}`} className="mb-3 flex items-center gap-2.5 font-display text-[17px] font-bold tracking-[-0.01em]">
                 {lane.title}
-                <span className="figures font-normal text-muted">{tickets.length}</span>
+                <span className={`figures grid h-6 min-w-[26px] place-items-center rounded-full px-2 font-sans text-[13px] font-bold ${lane.count}`}>{tickets.length}</span>
               </h2>
               {tickets.length ? (
                 <ul className="space-y-3">
@@ -179,7 +197,7 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
                   ))}
                 </ul>
               ) : (
-                <p className="rounded-panel border border-dashed border-line-strong px-4 py-8 text-center text-[15px] text-muted">{lane.empty}</p>
+                <p className="rounded-panel border-[1.5px] border-dashed border-line-strong px-4 py-7 text-center text-sm text-muted">{lane.empty}</p>
               )}
             </section>
           );
@@ -196,14 +214,13 @@ function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; la
   return (
     <article
       aria-label={`${where(round)}, ronda ${round.round}${late ? ", atrasada" : ""}`}
-      className={`rounded-panel border bg-surface ${late ? "border-danger" : "border-line"}`}
+      className={`enter overflow-hidden rounded-panel border-[1.5px] bg-surface ${late ? "border-danger" : "border-line"}`}
     >
-      {/* Title on its own line: three lanes beside the sidebar leave ~200px per ticket on a 1024px tablet. */}
-      <header className={`rounded-t-[7px] border-b px-4 py-3 ${late ? "border-danger/30 bg-danger-soft" : "border-line"}`}>
-        <h3 className="text-xl font-semibold tracking-[-0.01em] text-balance">{where(round)}</h3>
+      <header className={`border-b px-4 pt-3 pb-2.5 ${late ? "border-danger/20 bg-danger-soft" : "border-line"}`}>
+        <h3 className="font-display text-[21px] font-[750] tracking-[-0.02em] text-balance">{where(round)}</h3>
         <div className="figures mt-0.5 flex items-center justify-between gap-3">
-          <p className="text-sm text-muted">Ronda {round.round}</p>
-          <p className={`flex items-center gap-1.5 text-[15px] ${late ? "font-semibold text-danger" : "font-medium text-ink-2"}`}>
+          <p className="text-[13.5px] text-muted">Ronda {round.round}</p>
+          <p className={`flex items-center gap-1.5 text-[15px] whitespace-nowrap ${late ? "font-extrabold text-danger" : "font-semibold text-ink-2"}`}>
             <Clock size={18} strokeWidth={late ? 2.5 : 2.25} aria-hidden />
             {late ? "Atrasada · " : <span className="sr-only">Enviada hace </span>}
             {elapsed(round.created_at, now)}
@@ -218,12 +235,12 @@ function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; la
               <span className="figures w-8 shrink-0 text-lg font-semibold line-through">{item.quantity}×</span>
               <p className="min-w-0 flex-1 text-lg leading-snug">
                 <span className="line-through">{item.products.name}</span>
-                <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 align-middle text-xs font-semibold text-danger">Anulada</span>
+                <span className="ml-2 inline-block -rotate-3 rounded-md border-2 border-danger px-1.5 align-middle text-xs font-extrabold tracking-[0.06em] text-danger">ANULADA</span>
               </p>
             </li>
           ) : (
             <li key={item.id} className="flex items-start gap-3">
-              <span className="figures w-8 shrink-0 text-lg font-semibold">{item.quantity}×</span>
+              <span className="figures w-8 shrink-0 text-lg font-extrabold">{item.quantity}×</span>
               <div className="min-w-0 flex-1">
                 <p className="text-lg leading-snug font-medium">{item.products.name}</p>
                 {item.selected_modifiers.length > 0 && (
@@ -241,9 +258,9 @@ function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; la
             type="button"
             disabled={busy}
             onClick={onAdvance}
-            // Bigger than the 44px default: tapped with wet hands, read from across the kitchen. Blue only for
-            // "Marcar lista", the step the floor waits for (One Blue Rule).
-            className={`${lane.status === "PREPARING" ? button.primary : button.secondary} h-14! w-full text-lg!`}
+            // Bigger than the 44px default: tapped with wet hands, read from across the kitchen. Slate for
+            // "Marcar lista", the step the floor waits for; yellow only for handing food over (One Yellow Rule).
+            className={`${lane.status === "PREPARING" ? button.primary : lane.status === "READY" ? button.ready : button.secondary} h-14! w-full text-lg!`}
           >
             {busy && <LoaderCircle size={20} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
             {lane.action}

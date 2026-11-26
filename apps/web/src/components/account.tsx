@@ -26,7 +26,7 @@ export function Account({ me }: { me: Me }) {
   return (
     <div className="max-w-2xl space-y-6">
       <section className={panel} aria-labelledby="account-who">
-        <h2 id="account-who" className="text-[15px] font-semibold">
+        <h2 id="account-who" className="font-display text-[17px] font-semibold tracking-[-0.01em]">
           {me.user.full_name}
         </h2>
         <p className="mt-0.5 text-sm text-muted">
@@ -85,7 +85,7 @@ function PinForm({ me }: { me: Me }) {
   const pinField = `${field} figures tracking-[0.3em]`;
   return (
     <form onSubmit={submit} noValidate className={panel} aria-labelledby={titleId}>
-      <h2 id={titleId} className="text-[15px] font-semibold">
+      <h2 id={titleId} className="font-display text-[17px] font-semibold tracking-[-0.01em]">
         {hasPin ? "Cambiar mi PIN" : "Crear mi PIN"}
       </h2>
       <p className="mt-0.5 text-sm text-muted text-pretty">
@@ -175,7 +175,7 @@ function OwnerForm({ me }: { me: Me }) {
 
   return (
     <form onSubmit={submit} noValidate className={panel} aria-labelledby={titleId}>
-      <h2 id={titleId} className="text-[15px] font-semibold">
+      <h2 id={titleId} className="font-display text-[17px] font-semibold tracking-[-0.01em]">
         Tus datos
       </h2>
       <p className="mt-0.5 text-sm text-muted text-pretty">Solo tú entras con correo y contraseña, desde cualquier dispositivo.</p>

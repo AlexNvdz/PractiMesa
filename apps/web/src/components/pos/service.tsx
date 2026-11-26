@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Pencil, ShoppingBag, Users } from "lucide-react";
+import { ArrowLeft, Clock, ConciergeBell, type LucideIcon, Pencil, Plus, ReceiptText, ShoppingBag, Users } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
@@ -52,7 +52,6 @@ const STATUS_LABEL = { FREE: "Libre", OCCUPIED: "Ocupada", RESERVED: "Reservada"
 
 /** A round the kitchen finished and nobody has taken to the table yet. */
 const hasReady = (o: Order) => o.order_rounds.some((r) => r.status === "READY");
-const readyChip = <span className="inline-block rounded-full bg-success-soft px-2 py-0.5 text-xs font-medium text-success">Lista para servir</span>;
 
 /** Clock for elapsed times ("12 min"), refreshed every half minute. */
 export function useNow() {
@@ -68,7 +67,8 @@ export function useNow() {
  * Service screen (Q7): table map and counter orders on one side, the selected account on the other.
  * Composing a round swaps the map for the menu. Every terminal of the location stays in sync over SSE.
  */
-export function Service({ me }: { me: Me }) {
+/** `onReady` reports how many tables and counter orders have food ready, for the badge on the menu. */
+export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => void }) {
   const api = useApi();
   const now = useNow();
   const canOrder = me.user.role !== "KITCHEN";
@@ -163,6 +163,9 @@ export function Service({ me }: { me: Me }) {
   const served = here.filter((o) => !isOpen(o));
   const pickups = inService.filter((o) => o.order_type === "PICKUP").sort((a, b) => a.order_number - b.order_number);
   const hasSelection = selected !== null && (!picked || here.length > 0);
+  // A table with two orders ready still counts once.
+  const readyCount = new Set(inService.filter(hasReady).map((o) => o.table_id ?? o.id)).size;
+  useEffect(() => onReady?.(readyCount), [onReady, readyCount]);
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -313,7 +316,7 @@ export function Service({ me }: { me: Me }) {
               }}
             />
             {draft.length > 0 && (
-              <div className="sticky bottom-4 mt-6 lg:hidden">
+              <div className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] mt-6 sm:bottom-4 lg:hidden">
                 <button type="button" onClick={() => setMobilePanel(true)} className={`${button.primary} w-full border border-transparent shadow-panel`}>
                   Ver cuenta · {draft.reduce((n, l) => n + l.quantity, 0)} por enviar ·{" "}
                   {cop(draft.reduce((sum, l) => sum + linePrice(l), 0))}
@@ -438,6 +441,29 @@ export function Service({ me }: { me: Me }) {
   );
 }
 
+type Filter = "all" | "free" | "busy" | "ready" | "pickup";
+type TableState = "free" | "occupied" | "paid" | "reserved" | "ready";
+
+/** Base band ("zócalo") of each table card: says the state in words, colour backs it up (DESIGN.md). */
+const BAND: Record<TableState, { label: string; icon: LucideIcon; card: string; band: string }> = {
+  free: { label: "Libre", icon: Plus, card: "border-dashed border-line-strong bg-transparent", band: "bg-success-soft text-success" },
+  occupied: { label: "Ocupada", icon: ReceiptText, card: "border-line bg-surface", band: "bg-accent text-white" },
+  paid: { label: "Pagada", icon: ReceiptText, card: "border-line bg-surface", band: "bg-accent text-white" },
+  reserved: { label: "Reservada", icon: Clock, card: "border-reserved bg-surface", band: "bg-reserved-soft text-reserved" },
+  ready: { label: "Lista para servir", icon: ConciergeBell, card: "border-2 border-ready bg-surface", band: "band-sheen bg-ready text-ready-ink" },
+};
+
+function Bell() {
+  return (
+    <span aria-hidden className="bell-ring relative grid size-11 shrink-0 place-items-center rounded-full bg-ready-soft text-ready-ink">
+      <ConciergeBell size={24} strokeWidth={2.25} />
+    </span>
+  );
+}
+
+const chip =
+  "inline-flex h-[38px] items-center justify-center gap-2 rounded-full border px-3.5 text-sm font-semibold whitespace-nowrap transition-[background-color,border-color,color] duration-150 max-[853px]:h-10 max-[853px]:flex-auto";
+
 function FloorMap({
   tables,
   floors,
@@ -461,6 +487,7 @@ function FloorMap({
   onSelect: (next: Selection) => void;
   onPickup: () => void;
 }) {
+  const [filter, setFilter] = useState<Filter>("all");
   if (!tables) {
     return (
       <p role="status" className="py-10 text-center text-[15px] text-muted">
@@ -468,87 +495,194 @@ function FloorMap({
       </p>
     );
   }
-  const count = (status: DiningTable["status"]) => tables.filter((t) => t.status === status).length;
+  const stateOf = (t: DiningTable): TableState => {
+    const onTable = tableOrders(t.id);
+    if (onTable.some(hasReady)) return "ready";
+    if (onTable.length) return onTable.some(isOpen) ? "occupied" : "paid";
+    return t.status === "RESERVED" ? "reserved" : "free";
+  };
+  const states = new Map(tables.map((t) => [t.id, stateOf(t)]));
+  const isFree = (t: DiningTable) => ["free", "reserved"].includes(states.get(t.id)!);
+  const readyPickups = pickups.filter(hasReady);
+  const filters: { id: Filter; label: string; n: number }[] = [
+    { id: "all", label: "Todas", n: tables.length },
+    { id: "free", label: "Libres", n: tables.filter(isFree).length },
+    { id: "busy", label: "Ocupadas", n: tables.filter((t) => !isFree(t)).length },
+    { id: "ready", label: "Para servir", n: tables.filter((t) => states.get(t.id) === "ready").length + readyPickups.length },
+    { id: "pickup", label: "Para llevar", n: pickups.length },
+  ];
+  const shows = (t: DiningTable) =>
+    filter === "all" || (filter === "free" && isFree(t)) || (filter === "busy" && !isFree(t)) || (filter === "ready" && states.get(t.id) === "ready");
+  const shownPickups = filter === "pickup" || filter === "all" ? pickups : filter === "ready" ? readyPickups : [];
   const groups = [
     ...floors.map((f) => ({ id: f.id, name: f.name, tables: tables.filter((t) => t.floor_id === f.id) })),
     { id: "none", name: floors.length ? "Sin zona" : "", tables: tables.filter((t) => !t.floor_id || !floors.some((f) => f.id === t.floor_id)) },
   ].filter((g) => g.tables.length);
   const isSelected = (sel: Selection) => JSON.stringify(sel) === JSON.stringify(selected);
+  const shownTables = filter === "pickup" ? [] : tables.filter(shows);
 
   return (
-    <div>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <p className="figures text-sm text-muted">
-          {count("FREE")} libres · {count("OCCUPIED")} ocupadas
-          {count("RESERVED") > 0 && ` · ${count("RESERVED")} reservadas`}
-        </p>
-        <div className="flex gap-2">
-          {canEdit && (
-            <Link href="/mesas/editar" className={`${button.ghost} pl-3.5`}>
-              <Pencil size={18} strokeWidth={2.25} aria-hidden />
-              Editar mesas
-            </Link>
-          )}
-          {canOrder && (
-            <button type="button" onClick={onPickup} className={`${button.secondary} pl-3.5`}>
-              <ShoppingBag size={18} strokeWidth={2.25} aria-hidden />
-              Para llevar
+    <div className="max-[853px]:pb-20">
+      <div className="mb-6 flex items-start gap-3">
+        {/* Up to 852px the filters take the whole row and "Para llevar" floats (see the button below). */}
+        <div role="group" aria-label="Filtrar" className="flex min-w-0 flex-1 flex-wrap gap-2 max-[853px]:gap-1.5">
+          {filters.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              aria-pressed={filter === f.id}
+              onClick={() => setFilter(f.id)}
+              className={`${chip} ${filter === f.id ? "border-ink bg-ink text-white" : "border-line-strong bg-surface text-ink-2 hover:border-muted"}`}
+            >
+              {f.id === "ready" && <span aria-hidden className="size-2 rounded-full bg-ready" />}
+              {f.label}
+              <span className="figures font-bold opacity-70">{f.n}</span>
             </button>
-          )}
+          ))}
         </div>
+        {canEdit && (
+          <Link href="/mesas/editar" aria-label="Editar mesas" title="Editar mesas" className={`${button.ghost} h-10 px-3 max-sm:hidden`}>
+            <Pencil size={18} strokeWidth={2.25} aria-hidden />
+          </Link>
+        )}
+        {canOrder && (
+          <button
+            type="button"
+            onClick={onPickup}
+            className={`${button.secondary} h-10 pl-3 max-[853px]:fixed max-[853px]:right-5 max-[853px]:bottom-6 max-[853px]:z-30 max-[853px]:h-[52px] max-[853px]:rounded-full max-[853px]:border-transparent max-[853px]:bg-accent max-[853px]:pr-5 max-[853px]:pl-4 max-[853px]:text-white max-[853px]:shadow-panel max-[853px]:hover:enabled:bg-accent-strong max-[853px]:hover:enabled:text-white max-sm:right-4 max-sm:bottom-[calc(84px+env(safe-area-inset-bottom))]`}
+          >
+            <ShoppingBag size={18} strokeWidth={2.25} aria-hidden />
+            Para llevar
+          </button>
+        )}
       </div>
 
       {!tables.length && (
         <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
-          Esta sede todavía no tiene mesas.{canEdit && " Agrégalas en “Editar mesas”."}
+          Esta sede todavía no tiene mesas.{canEdit && " Agrégalas con el lápiz de “Editar mesas”."}
+        </p>
+      )}
+      {tables.length > 0 && !shownTables.length && !shownPickups.length && (
+        <p className="rounded-panel border border-dashed border-line-strong px-5 py-10 text-center text-[15px] text-muted">
+          {filter === "pickup" ? "Sin pedidos para llevar en curso." : "Ninguna mesa con este filtro."}
         </p>
       )}
 
-      {groups.map((group) => (
-        <section key={group.id} aria-label={group.name || "Mesas"} className="mb-8">
-          {group.name && <h3 className="mb-3 text-sm font-semibold text-ink-2">{group.name}</h3>}
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-            {group.tables.map((t) => {
-              const onTable = tableOrders(t.id);
-              const order = onTable[0];
-              const items = order ? liveItems(order.order_items).reduce((n, i) => n + i.quantity, 0) : 0;
+      {groups.map((group) => {
+        const shown = group.tables.filter((t) => shownTables.includes(t));
+        if (!shown.length) return null;
+        return (
+          <section key={group.id} aria-label={group.name || "Mesas"} className="mb-8">
+            {group.name && (
+              <h3 className="mb-3 flex items-baseline gap-2.5 font-display text-[17px] font-semibold tracking-[-0.01em]">
+                {group.name}
+                <small className="figures font-sans text-[13.5px] font-medium text-muted">
+                  {group.tables.filter((t) => !isFree(t)).length} de {group.tables.length} ocupadas
+                </small>
+              </h3>
+            )}
+            <ul className="grid grid-cols-[repeat(auto-fill,minmax(156px,1fr))] gap-3.5 max-sm:grid-cols-2 max-sm:gap-2.5">
+              {shown.map((t) => {
+                const order = tableOrders(t.id)[0];
+                const state = states.get(t.id)!;
+                const { label, icon: Icon, card, band } = BAND[state];
+                const pressed = isSelected({ table: t.id });
+                return (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      aria-pressed={pressed}
+                      onClick={() => onSelect({ table: t.id })}
+                      className={`flex h-full min-h-[150px] w-full flex-col overflow-hidden rounded-panel border-[1.5px] text-left transition-[border-color,translate,box-shadow] duration-200 ease-(--ease-out) hover:border-line-strong motion-safe:hover:-translate-y-0.5 ${card} ${
+                        pressed ? `ring-[3px] ${state === "ready" ? "ring-ready-soft" : "border-accent! ring-accent-soft"}` : ""
+                      }`}
+                    >
+                      <span className="flex flex-1 flex-col px-3.5 pt-3 pb-2.5">
+                        <span className="flex items-start justify-between gap-2">
+                          <span className="min-w-0">
+                            <span
+                              className={`figures block font-display text-[40px] leading-none font-[750] tracking-[-0.03em] [font-variation-settings:'opsz'_72] ${
+                                state === "free" ? "text-muted" : "text-ink"
+                              }`}
+                            >
+                              {t.number}
+                            </span>
+                            {t.name !== `Mesa #${t.number}` && <span className="mt-1 block truncate text-[12.5px] font-semibold text-muted">{t.name}</span>}
+                          </span>
+                          {state === "ready" ? (
+                            <Bell />
+                          ) : (
+                            <span className="figures flex items-center gap-1 text-[13px] font-semibold text-muted">
+                              <Users size={14} aria-hidden />
+                              <span className="sr-only">Puestos:</span>
+                              {t.capacity}
+                            </span>
+                          )}
+                        </span>
+                        {order && (
+                          <span className="figures mt-auto flex justify-between gap-2 pt-2.5 text-[13.5px] whitespace-nowrap text-ink-2">
+                            <span className="flex items-center gap-1">
+                              <Clock size={14} aria-hidden />
+                              {order.payment_status === "PENDING_QR" ? "QR pendiente" : elapsed(order.created_at, now)}
+                            </span>
+                            <b className="font-bold text-ink">{cop(order.total_cop)}</b>
+                          </span>
+                        )}
+                      </span>
+                      <span className={`flex h-9 shrink-0 items-center gap-2 px-3.5 text-[13.5px] font-bold ${band}`}>
+                        <Icon size={16} strokeWidth={2.5} aria-hidden />
+                        <span className="truncate">{label}</span>
+                        {order && state !== "ready" && <span className="figures ml-auto">#{order.order_number}</span>}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        );
+      })}
+
+      {shownPickups.length > 0 && (
+        <section aria-label="Para llevar">
+          <h3 className="mb-3 font-display text-[17px] font-semibold tracking-[-0.01em]">Para llevar</h3>
+          <ul className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-2.5 max-sm:grid-cols-1">
+            {shownPickups.map((o) => {
+              const ready = hasReady(o);
+              const pressed = isSelected({ order: o.id });
               return (
-                <li key={t.id}>
+                <li key={o.id}>
                   <button
                     type="button"
-                    aria-pressed={isSelected({ table: t.id })}
-                    onClick={() => onSelect({ table: t.id })}
-                    className={`flex h-full min-h-28 w-full flex-col rounded-panel border p-4 text-left transition-[background-color,border-color,scale] duration-150 ease-out motion-safe:active:scale-[0.96] aria-pressed:border-accent aria-pressed:bg-accent-soft ${
-                      order ? "border-line-strong bg-surface" : "border-line bg-surface hover:not-aria-pressed:bg-ground"
-                    }`}
+                    aria-pressed={pressed}
+                    onClick={() => onSelect({ order: o.id })}
+                    className={`grid min-h-[72px] w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 rounded-panel bg-surface px-3.5 py-3 text-left transition-[border-color] duration-150 hover:border-line-strong ${
+                      ready ? "border-2 border-ready" : "border-[1.5px] border-line"
+                    } ${pressed ? `ring-[3px] ${ready ? "ring-ready-soft" : "border-accent! ring-accent-soft"}` : ""}`}
                   >
-                    <span className="flex items-start justify-between gap-2">
-                      <span className="text-[15px] font-semibold">{t.name}</span>
-                      <span className="figures flex items-center gap-1 text-xs text-muted">
-                        <Users size={14} aria-hidden />
-                        <span className="sr-only">Puestos:</span>
-                        {t.capacity}
+                    {ready ? (
+                      <Bell />
+                    ) : (
+                      <span aria-hidden className="grid size-11 place-items-center rounded-full bg-ground text-ink-2">
+                        <ShoppingBag size={20} />
+                      </span>
+                    )}
+                    <span className="grid min-w-0 gap-0.5">
+                      <b className="figures truncate font-display text-[17px] font-bold">Pedido #{o.order_number}</b>
+                      <span className="figures text-[13.5px] text-muted">
+                        {o.payment_status === "PENDING_QR"
+                          ? "QR pendiente"
+                          : isOpen(o)
+                            ? units(liveItems(o.order_items).reduce((n, i) => n + i.quantity, 0))
+                            : "Pagado"}{" "}
+                        · hace {elapsed(o.created_at, now)}
                       </span>
                     </span>
-                    <span className="mt-auto pt-3">
-                      {order ? (
-                        <>
-                          <span className="figures block text-lg font-semibold tracking-[-0.01em]">{cop(order.total_cop)}</span>
-                          <span className="figures block text-xs text-muted">
-                            {order.payment_status === "PENDING_QR" ? "QR pendiente" : isOpen(order) ? units(items) : "Pagada"} ·{" "}
-                            {elapsed(order.created_at, now)}
-                          </span>
-                          {onTable.some(hasReady) && <span className="mt-1.5 block">{readyChip}</span>}
-                        </>
-                      ) : (
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                            t.status === "RESERVED" ? "bg-warning-soft text-warning" : "bg-ground text-muted"
-                          }`}
-                        >
-                          {STATUS_LABEL[t.status]}
-                        </span>
-                      )}
+                    <span className="grid justify-items-end gap-1">
+                      <b className="figures text-base font-bold">{cop(o.total_cop)}</b>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[12.5px] font-bold whitespace-nowrap ${ready ? "bg-ready text-ready-ink" : "bg-accent-soft text-accent"}`}>
+                        {ready ? "Listo para entregar" : "En cocina"}
+                      </span>
                     </span>
                   </button>
                 </li>
@@ -556,37 +690,13 @@ function FloorMap({
             })}
           </ul>
         </section>
-      ))}
-
-      {pickups.length > 0 && (
-        <section aria-label="Para llevar">
-          <h3 className="mb-3 text-sm font-semibold text-ink-2">Para llevar</h3>
-          <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
-            {pickups.map((o) => (
-              <li key={o.id}>
-                <button
-                  type="button"
-                  aria-pressed={isSelected({ order: o.id })}
-                  onClick={() => onSelect({ order: o.id })}
-                  className="flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:not-aria-pressed:bg-ground aria-pressed:bg-accent-soft"
-                >
-                  <span className="figures text-[15px] font-semibold">#{o.order_number}</span>
-                  <span className="figures flex-1 text-sm text-muted">
-                    {o.payment_status === "PENDING_QR"
-                      ? "QR pendiente"
-                      : isOpen(o)
-                        ? units(liveItems(o.order_items).reduce((n, i) => n + i.quantity, 0))
-                        : "Pagado"}{" "}
-                    ·{" "}
-                    {elapsed(o.created_at, now)}
-                  </span>
-                  {hasReady(o) && readyChip}
-                  <span className="figures text-[15px] font-medium">{cop(o.total_cop)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+      )}
+      {/* Phone: the filters need the whole row, so the edit link moves to the end of the map. */}
+      {canEdit && (
+        <Link href="/mesas/editar" className={`${button.ghost} mt-6 w-full sm:hidden`}>
+          <Pencil size={18} strokeWidth={2.25} aria-hidden />
+          Editar mesas
+        </Link>
       )}
     </div>
   );

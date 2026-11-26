@@ -319,7 +319,7 @@ function IngredientForm({
       <section aria-label={`Stock en ${locationName}`} className={canManage ? "border-t border-line pt-5" : ""}>
         {canManage && (
           <>
-            <h3 className="text-[15px] font-semibold">En {locationName}</h3>
+            <h3 className="font-display text-[17px] font-semibold tracking-[-0.01em]">En {locationName}</h3>
             <p className="mt-0.5 mb-3 text-sm text-muted">Cada venta pagada descuenta la receta. Si se vende más de lo contado, el stock queda en negativo y la venta sigue.</p>
           </>
         )}
@@ -367,7 +367,7 @@ function IngredientForm({
 
       {moves && (
         <section aria-labelledby="moves-title" className="border-t border-line pt-5">
-          <h3 id="moves-title" className="mb-3 text-[15px] font-semibold">
+          <h3 id="moves-title" className="mb-3 font-display text-[17px] font-semibold tracking-[-0.01em]">
             Últimos movimientos
           </h3>
           {moves.length ? (

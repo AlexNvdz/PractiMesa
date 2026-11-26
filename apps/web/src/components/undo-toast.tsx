@@ -44,7 +44,7 @@ export function UndoToast({ undo, onClose }: { undo: Undo | null; onClose: () =>
       onFocus={pause}
       onBlur={start}
       // Floats over the board: shadow, plus a transparent border so forced-colors mode still draws an edge.
-      className="enter fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-md items-center gap-3 rounded-panel border border-transparent bg-surface py-2 pr-2 pl-4 text-[15px] text-ink shadow-panel"
+      className="enter fixed inset-x-4 bottom-[calc(76px+env(safe-area-inset-bottom))] z-40 sm:bottom-4 mx-auto flex max-w-md items-center gap-3 rounded-panel border border-transparent bg-surface py-2 pr-2 pl-4 text-[15px] text-ink shadow-panel"
     >
       <p className="min-w-0 flex-1">{undo.message}</p>
       <button

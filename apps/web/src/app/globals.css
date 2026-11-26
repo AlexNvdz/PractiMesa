@@ -1,30 +1,43 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  /* DESIGN.md "El Zócalo", Pizarra theme. Names kept from the first system so every screen follows. */
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bricolage), var(--font-hanken), ui-sans-serif, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --color-ground: #f6f7f9;
+  --color-ground: #f3f4f1; /* cal */
   --color-surface: #ffffff;
-  --color-ink: #111827;
-  --color-ink-2: #374151;
-  --color-muted: #6b7280;
-  --color-line: #e5e7eb;
-  --color-line-strong: #d1d5db;
-  --color-accent: #2563eb;
-  --color-accent-strong: #1d4ed8;
-  --color-accent-soft: #eff4ff;
-  --color-success: #15803d;
-  --color-success-soft: #ecfdf3;
-  --color-warning: #b45309;
-  --color-warning-soft: #fffbeb;
-  --color-danger: #b91c1c;
-  --color-danger-soft: #fef2f2;
+  --color-ink: #171e2e;
+  --color-ink-2: #3a4357;
+  --color-muted: #646d80;
+  --color-line: #e2e4df;
+  --color-line-strong: #c9cdc5;
+  --color-accent: #2a3347; /* pizarra */
+  --color-accent-strong: #171e2e;
+  --color-accent-soft: #eceef2;
+  --color-rail: #fbfbf9;
+  --color-rail-hover: #eef0ec;
+  --color-rail-muted: #868d9b;
+  --color-success: #1b8068; /* menta */
+  --color-success-soft: #e1f2ec;
+  /* Ochre for "needs attention"; the bright yellow below only means food is ready. */
+  --color-warning: #8a5300;
+  --color-warning-soft: #fdf1dc;
+  --color-danger: #c13d29; /* bermellón */
+  --color-danger-soft: #fbe8e4;
+  --color-ready: #f4b400;
+  --color-ready-soft: #fff3cc;
+  --color-ready-ink: #5b4200;
+  --color-reserved: #6a52a3;
+  --color-reserved-soft: #eee9f8;
 
-  --radius-control: 8px;
-  --radius-panel: 8px;
-  /* Only for surfaces that float over content (mobile drawer); pair with a transparent border for forced colors. */
-  --shadow-panel: 0 0 0 1px rgb(17 24 39 / 0.06), 0 1px 2px rgb(17 24 39 / 0.04), 0 8px 24px -12px rgb(17 24 39 / 0.14);
+  --radius-control: 10px;
+  --radius-panel: 14px;
+  --radius-sheet: 20px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Only for surfaces that float over content; pair with a transparent border for forced colors. */
+  --shadow-panel: 0 1px 2px rgb(23 30 46 / 0.06), 0 12px 32px -14px rgb(23 30 46 / 0.28);
 }
 
 @layer base {
@@ -34,7 +47,6 @@
   }
   body {
     @apply bg-ground text-ink font-sans antialiased;
-    font-feature-settings: "cv11", "ss01";
   }
   ::selection {
     background: var(--color-accent-soft);
@@ -47,9 +59,14 @@
   input {
     caret-color: var(--color-accent);
   }
+  /* Thin, see-through scrollbars without arrows. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-color: rgb(23 30 46 / 0.22) transparent;
+  }
+  h1,
+  h2 {
+    text-wrap: balance;
   }
   a {
     text-underline-offset: 3px;
@@ -89,5 +106,81 @@
 @media (prefers-reduced-motion: reduce) {
   .enter {
     animation-name: enter-fade;
+  }
+}
+
+/* Login canvas: one tile of restaurant line icons drifting slowly, faded out behind the card. */
+@keyframes drift {
+  to {
+    background-position: 320px 320px;
+  }
+}
+@utility login-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: url("/login-pattern.svg") 0 0 / 320px 320px repeat;
+  mask-image: radial-gradient(ellipse 62% 70% at 50% 50%, transparent 30%, #000 78%);
+  @media (prefers-reduced-motion: no-preference) {
+    animation: drift 90s linear infinite;
+  }
+}
+
+/* "Ready to serve": the service bell rings with a ripple, and light sweeps the state band. Motion only;
+   the yellow band and its words carry the state when motion is reduced. */
+@keyframes ring {
+  0% { rotate: 0deg; }
+  4% { rotate: -16deg; }
+  9% { rotate: 14deg; }
+  14% { rotate: -10deg; }
+  19% { rotate: 7deg; }
+  24% { rotate: -3deg; }
+  28%,
+  100% { rotate: 0deg; }
+}
+@keyframes ripple {
+  0% { scale: 1; opacity: 0.9; }
+  35%,
+  100% { scale: 1.55; opacity: 0; }
+}
+@keyframes sheen {
+  0% { translate: -100% 0; }
+  45%,
+  100% { translate: 100% 0; }
+}
+@utility bell-ring {
+  @media (prefers-reduced-motion: no-preference) {
+    & svg {
+      transform-origin: 50% 20%;
+      animation: ring 2.6s var(--ease-out) infinite;
+    }
+    &::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 9999px;
+      border: 2px solid var(--color-ready);
+      animation: ripple 2.6s var(--ease-out) infinite;
+    }
+  }
+}
+@utility band-sheen {
+  position: relative;
+  overflow: hidden;
+  @media (prefers-reduced-motion: no-preference) {
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      translate: -100% 0;
+      background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.65) 50%, transparent 80%);
+      animation: sheen 2.6s var(--ease-out) infinite;
+    }
+  }
+}
+
+@keyframes pop {
+  from {
+    scale: 0.3;
   }
 }

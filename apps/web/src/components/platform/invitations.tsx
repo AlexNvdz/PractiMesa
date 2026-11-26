@@ -74,7 +74,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em]">Invitaciones</h1>
+        <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Invitaciones</h1>
         <button type="button" onClick={() => setDialog("new")} className={`${button.primary} ml-auto pl-3.5`}>
           <Plus size={18} strokeWidth={2.25} aria-hidden />
           Nueva invitación

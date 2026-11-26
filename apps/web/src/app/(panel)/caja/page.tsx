@@ -88,7 +88,7 @@ function CashRegisters({ me }: { me: Me }) {
 
       <section aria-labelledby="estado" className="rounded-panel border border-line bg-surface p-5 sm:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="estado" className="text-lg font-semibold tracking-[-0.01em]">
+          <h2 id="estado" className="font-display text-lg font-bold tracking-[-0.01em]">
             {current ? "Caja abierta" : "Caja cerrada"}
           </h2>
           {current && (

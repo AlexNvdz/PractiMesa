@@ -226,7 +226,7 @@ export function ProductForm({
       </div>
 
       <section aria-labelledby="opciones" className={sectionClass}>
-        <h3 id="opciones" className="text-[15px] font-semibold">
+        <h3 id="opciones" className="font-display text-[17px] font-semibold tracking-[-0.01em]">
           Opciones
         </h3>
         <p className="mt-0.5 text-sm text-muted">Tamaños, extras o términos que el cliente elige al pedir.</p>
@@ -300,7 +300,7 @@ export function ProductForm({
       </section>
 
       <section aria-labelledby="receta" className={sectionClass}>
-        <h3 id="receta" className="text-[15px] font-semibold">
+        <h3 id="receta" className="font-display text-[17px] font-semibold tracking-[-0.01em]">
           Receta
         </h3>
         <p className="mt-0.5 text-sm text-muted">Lo que se descuenta del inventario por cada unidad vendida.</p>
@@ -366,7 +366,7 @@ export function ProductForm({
       </section>
 
       <section aria-labelledby="sede" className={sectionClass}>
-        <h3 id="sede" className="text-[15px] font-semibold">
+        <h3 id="sede" className="font-display text-[17px] font-semibold tracking-[-0.01em]">
           En {locationName}
         </h3>
         <p className="mt-0.5 text-sm text-muted">Precio propio de esta sede y si se vende hoy.</p>

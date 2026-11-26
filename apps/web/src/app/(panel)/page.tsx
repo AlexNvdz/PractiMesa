@@ -37,7 +37,7 @@ export default function HomePage() {
 
   return (
     <PanelShell me={me} title="Inicio">
-      <h2 className="text-2xl font-semibold tracking-[-0.02em] text-balance">
+      <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-balance">
         {greeting(now)}, {firstName}
       </h2>
       <p className="mt-1 text-[15px] text-muted first-letter:uppercase">{today(now)}</p>

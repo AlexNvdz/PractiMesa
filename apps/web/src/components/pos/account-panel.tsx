@@ -10,9 +10,9 @@ const modifiersOf = (picks: { option: string }[]) => picks.map((p) => p.option).
 
 /** Kitchen state of a round as the floor reads it; ready is the one that asks for action. */
 const ROUND_STATE = {
-  PENDING: { label: "En cola", className: "bg-ground text-muted" },
-  PREPARING: { label: "En preparación", className: "bg-ground text-ink-2" },
-  READY: { label: "Lista para servir", className: "bg-success-soft text-success" },
+  PENDING: { label: "En cola", className: "border border-line-strong bg-ground text-ink-2" },
+  PREPARING: { label: "En preparación", className: "bg-accent-soft text-accent" },
+  READY: { label: "Lista para servir", className: "bg-ready text-ready-ink" },
   DELIVERED: { label: "Entregada", className: "text-muted" },
 } as const;
 
@@ -77,7 +77,7 @@ export function AccountPanel({
       aria-label={`Cuenta: ${title}`}
       className="flex flex-col rounded-panel border border-line bg-surface lg:sticky lg:top-[88px] lg:max-h-[calc(100dvh-112px)]"
     >
-      <header className="flex items-start gap-2 border-b border-line px-5 py-4">
+      <header className="flex items-start gap-2 border-b border-line px-5 pt-[18px] pb-3.5">
         <button
           type="button"
           onClick={onBack}
@@ -87,7 +87,7 @@ export function AccountPanel({
           <ArrowLeft size={20} aria-hidden />
         </button>
         <div className="min-w-0 flex-1 pt-0.5">
-          <h2 className="truncate text-lg font-semibold tracking-[-0.01em]">{title}</h2>
+          <h2 className="truncate font-display text-[22px] font-[750] tracking-[-0.02em]">{title}</h2>
           <p className="text-sm text-muted">{subtitle}</p>
         </div>
         {pendingQr && (
@@ -122,7 +122,7 @@ export function AccountPanel({
           </div>
         ))}
         {[...rounds].map(([round, items]) => (
-          <div key={round} className="mb-5 last:mb-0">
+          <div key={round} className="border-b border-dashed border-line-strong py-3.5 first:pt-0 last:border-b-0 last:pb-0">
             <RoundHeading round={round} kitchen={kitchenState(round)} canDeliver={canOrder} busy={busy} onDeliver={(k) => onDeliver(order!, k)} />
             <ul className="space-y-3">
               {items.map((item) => (
@@ -201,7 +201,7 @@ export function AccountPanel({
               <span className="block text-[15px] font-medium">Total</span>
               <span className="figures block text-xs text-muted">Incluye {cop(order.tax_cop)} de impuestos</span>
             </span>
-            <span className="figures text-xl font-semibold tracking-[-0.01em]">{cop(order.total_cop)}</span>
+            <span className="figures font-display text-[26px] font-[750] tracking-[-0.02em]">{cop(order.total_cop)}</span>
           </div>
         )}
 
@@ -267,15 +267,15 @@ function RoundHeading({
   const state = kitchen && ROUND_STATE[kitchen.status];
   return (
     <div className="mb-2 flex min-h-8 items-center gap-2">
-      <h3 className="text-sm font-semibold text-ink-2">Ronda {round}</h3>
+      <h3 className="text-sm font-bold text-ink">Ronda {round}</h3>
       {state && (
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${state.className}`}>
+        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12.5px] font-bold ${state.className}`}>
           {kitchen.status === "DELIVERED" && <Check size={14} strokeWidth={2.25} aria-hidden />}
           {state.label}
         </span>
       )}
       {canDeliver && kitchen?.status === "READY" && (
-        <button type="button" disabled={busy} onClick={() => onDeliver(kitchen)} className={`${button.ghost} -my-1 -mr-2 ml-auto h-10! px-3 text-sm!`}>
+        <button type="button" disabled={busy} onClick={() => onDeliver(kitchen)} className={`${button.ready} -my-1 ml-auto h-9! px-3 text-sm!`}>
           Marcar entregada
         </button>
       )}

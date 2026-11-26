@@ -66,7 +66,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-[-0.02em]">Negocios</h1>
+      <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Negocios</h1>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <fieldset className="flex flex-wrap gap-2">
