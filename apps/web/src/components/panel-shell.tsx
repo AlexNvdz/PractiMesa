@@ -24,9 +24,12 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Logo, LogoMark } from "@/components/logo";
+import { useApi } from "@/lib/api";
 import { ROLE_LABEL, useAuth, type Me, type Role } from "@/lib/auth";
+import { useLive } from "@/lib/live";
+import { type Order, readyCount } from "@/lib/pos";
 
 interface NavItem {
   label: string;
@@ -70,8 +73,9 @@ const isActive = (pathname: string, href: string) =>
 // Rail rows. Inside the compact rail (group/rail closed) the label fades out and comes back as a tooltip to the right.
 const row =
   "relative flex h-11 w-full items-center gap-3.5 rounded-xl px-3 text-[15px] whitespace-nowrap transition-[background-color,color] duration-150";
+const navRow = "group-data-[rail=closed]/rail:w-52";
 const idle = "text-ink-2 hover:bg-rail-hover hover:text-ink";
-const current = "bg-accent font-semibold text-white";
+const current = "bg-accent font-[650] text-white";
 const label = "transition-opacity duration-150 group-data-[rail=closed]/rail:pointer-events-none group-data-[rail=closed]/rail:opacity-0";
 const tip =
   "group-data-[rail=closed]/rail:after:pointer-events-none group-data-[rail=closed]/rail:after:fixed group-data-[rail=closed]/rail:after:left-[82px] group-data-[rail=closed]/rail:after:z-50 group-data-[rail=closed]/rail:after:rounded-lg group-data-[rail=closed]/rail:after:bg-ink group-data-[rail=closed]/rail:after:px-2.5 group-data-[rail=closed]/rail:after:py-1.5 group-data-[rail=closed]/rail:after:text-[13px] group-data-[rail=closed]/rail:after:font-semibold group-data-[rail=closed]/rail:after:text-white group-data-[rail=closed]/rail:after:opacity-0 group-data-[rail=closed]/rail:after:transition-opacity group-data-[rail=closed]/rail:after:content-[attr(data-tip)] group-data-[rail=closed]/rail:hover:after:opacity-100 group-data-[rail=closed]/rail:focus-visible:after:opacity-100";
@@ -111,24 +115,24 @@ function Sidebar({
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-[68px] shrink-0 items-center px-[18px]">
-        <Logo size={40} className="text-[21px]" nameClassName={label} />
+        <Logo size={40} ink className="text-[21px]" nameClassName={label} />
       </div>
       <div className={`px-[18px] pt-0.5 pb-3.5 whitespace-nowrap ${label}`}>
-        <p className="truncate text-sm font-semibold text-ink">{me.organization.name}</p>
-        <p className="text-[12.5px] text-rail-muted">{plan}</p>
+        <p className="truncate text-sm leading-[1.45] font-semibold text-ink">{me.organization.name}</p>
+        <p className="text-[12.5px] leading-[21.75px] text-rail-muted">{plan}</p>
       </div>
 
       {/* Scrollbar hidden until the pointer is over the list; the fade at both ends hints that it scrolls. */}
       <nav
         aria-label="Principal"
-        className="flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3.5 py-1 [scrollbar-color:transparent_transparent] hover:[scrollbar-color:rgb(23_30_46/0.22)_transparent] group-data-[rail=closed]/rail:overflow-y-hidden not-group-data-[rail=closed]/rail:mask-[linear-gradient(to_bottom,transparent,#000_10px,#000_calc(100%-28px),transparent)]"
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain rail-scroll py-1 pr-3.5 pl-3.5 group-data-[rail=closed]/rail:pr-0 not-group-data-[rail=closed]/rail:mask-[linear-gradient(to_bottom,transparent,#000_10px,#000_calc(100%-28px),transparent)]"
       >
         <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {visible(me.user.role).map(({ label: text, icon: Icon, href }) => {
             if (!href) {
               return (
                 <li key={text}>
-                  <span aria-disabled="true" data-tip={`${text} · Pronto`} className={`${row} ${tip} text-rail-muted`}>
+                  <span aria-disabled="true" data-tip={`${text} · Pronto`} className={`${row} ${navRow} ${tip} text-rail-muted`}>
                     <Icon size={20} aria-hidden className="shrink-0" />
                     <span className={label}>{text}</span>
                     <span className={`ml-auto rounded-full bg-rail-hover px-2 py-px text-[11.5px] font-semibold ${label}`}>Pronto</span>
@@ -144,9 +148,9 @@ function Sidebar({
                   onClick={onNavigate}
                   aria-current={active ? "page" : undefined}
                   data-tip={text}
-                  className={`${row} ${tip} ${active ? current : idle}`}
+                  className={`${row} ${navRow} ${tip} ${active ? current : idle}`}
                 >
-                  <Icon size={20} strokeWidth={active ? 2.25 : 2} aria-hidden className="shrink-0" />
+                  <Icon size={20} aria-hidden className="shrink-0" />
                   <span className={label}>{text}</span>
                   <Badge n={badges?.[href]} onDark={active} />
                 </Link>
@@ -157,16 +161,16 @@ function Sidebar({
       </nav>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-0.5 border-t border-line px-3.5 pt-2.5 pb-3.5">
-        <div className="flex items-center gap-3 px-1.5 py-1.5">
+        <div className="flex items-center gap-3 px-1.5 pt-1.5 pb-2">
           <span
             aria-hidden
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-bold text-accent"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-ready text-[13px] font-extrabold text-ready-ink"
           >
             {initials(me.user.full_name)}
           </span>
           <div className={`min-w-0 whitespace-nowrap ${label}`}>
-            <p className="truncate text-sm font-semibold">{me.user.full_name}</p>
-            <p className="truncate text-[12.5px] text-rail-muted">{ROLE_LABEL[me.user.role]}</p>
+            <p className="truncate text-sm leading-[1.45] font-semibold text-ink">{me.user.full_name}</p>
+            <p className="truncate text-[12.5px] leading-[21.75px] text-rail-muted">{ROLE_LABEL[me.user.role]}</p>
           </div>
         </div>
         <Link
@@ -176,7 +180,7 @@ function Sidebar({
           data-tip="Mi cuenta"
           className={`${row} ${tip} ${account ? current : idle}`}
         >
-          <UserRound size={20} strokeWidth={account ? 2.25 : 2} aria-hidden className="shrink-0" />
+          <UserRound size={20} aria-hidden className="shrink-0" />
           <span className={label}>Mi cuenta</span>
         </Link>
         <button type="button" onClick={() => void logout()} data-tip="Cerrar sesión" className={`${row} ${tip} ${idle}`}>
@@ -194,12 +198,32 @@ function Sidebar({
           >
             {onToggle.open ? <ChevronsLeft size={20} aria-hidden className="shrink-0" /> : <ChevronsRight size={20} aria-hidden className="shrink-0" />}
             <span className={label}>Contraer menú</span>
-            <kbd className={`ml-auto rounded-md border border-line px-1.5 font-sans text-xs text-rail-muted ${label}`}>]</kbd>
           </button>
         )}
       </div>
     </div>
   );
+}
+
+/** Roles that see "Mesas" in the menu, and so its count of food ready to serve. */
+const SERVICE_ROLES: Role[] = ["OWNER", "ADMIN", "CASHIER", "WAITER"];
+
+/**
+ * Yellow count on "Mesas" for every screen: how many tables and counter orders have food ready.
+ * Off on Mesas itself, which already knows it and passes it in `badges`.
+ */
+function useReadyBadge(role: Role, enabled: boolean) {
+  const api = useApi();
+  const [count, setCount] = useState(0);
+  const on = enabled && SERVICE_ROLES.includes(role);
+  const load = useCallback(() => api<Order[]>("/orders").then((orders) => setCount(readyCount(orders)), () => undefined), [api]);
+  // Any change to an order may flip a round to ready or delivered: reload the short list of orders in service.
+  useLive(
+    () => void load(),
+    (event) => event.type === "order" && void load(),
+    on,
+  );
+  return count;
 }
 
 export function PanelLoading() {
@@ -235,6 +259,8 @@ export function PanelShell({
   const location = me.locations.find((l) => l.id === me.current_location_id);
   const tabs = visible(me.user.role).filter((item) => item.href && TABS.includes(item.href));
   const rail = railOpen ? "open" : "closed";
+  const readyHere = useReadyBadge(me.user.role, pathname !== "/mesas");
+  const counts: Record<string, number> = { "/mesas": readyHere, ...badges };
 
   const toggleRail = () => setRailOpen((open) => !open);
 
@@ -265,7 +291,7 @@ export function PanelShell({
       className="min-h-dvh sm:grid sm:grid-cols-[76px_1fr] sm:transition-[grid-template-columns] sm:duration-[280ms] sm:ease-(--ease-out) sm:data-[rail=open]:grid-cols-[256px_1fr]"
     >
       <aside data-rail={rail} aria-label="Menú" className="group/rail sticky top-0 hidden h-dvh overflow-hidden border-r border-line bg-rail sm:block">
-        <Sidebar me={me} badges={badges} onToggle={{ open: railOpen, toggle: toggleRail }} />
+        <Sidebar me={me} badges={counts} onToggle={{ open: railOpen, toggle: toggleRail }} />
       </aside>
 
       <dialog
@@ -286,7 +312,7 @@ export function PanelShell({
         >
           <X size={20} aria-hidden />
         </button>
-        <Sidebar me={me} badges={badges} onNavigate={() => setMenuOpen(false)} />
+        <Sidebar me={me} badges={counts} onNavigate={() => setMenuOpen(false)} />
       </dialog>
 
       <div className="min-w-0">
@@ -341,10 +367,10 @@ export function PanelShell({
               className={`flex flex-col items-center gap-0.5 pt-1 pb-0.5 text-xs font-semibold ${active ? "text-ink" : "text-muted"}`}
             >
               <span className={`relative grid h-[30px] w-14 place-items-center rounded-full transition-[background-color] duration-150 ${active ? "bg-accent-soft text-accent" : ""}`}>
-                <Icon size={20} strokeWidth={active ? 2.25 : 2} aria-hidden />
-                {!!badges?.[href!] && (
+                <Icon size={20} aria-hidden />
+                {!!counts[href!] && (
                   <span className="figures absolute -top-1 left-[calc(50%+6px)] grid h-[18px] min-w-[18px] place-items-center rounded-full bg-ready px-1.5 text-[11px] font-extrabold text-ready-ink ring-2 ring-surface">
-                    {badges[href!]}
+                    {counts[href!]}
                   </span>
                 )}
               </span>

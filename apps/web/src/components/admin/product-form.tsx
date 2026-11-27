@@ -9,7 +9,7 @@ import { cop, pesos } from "@/lib/format";
 import type { Category, Ingredient, LocationProduct, ModifierGroup, Product, RecipeItem } from "@/lib/pos";
 
 /** Taxes a Colombian restaurant charges, included in the price. */
-const TAXES = [
+export const TAXES = [
   { rate: "8", label: "Impoconsumo 8%" },
   { rate: "19", label: "IVA 19%" },
   { rate: "5", label: "IVA 5%" },

@@ -16,7 +16,7 @@ const RETRY_MS = 3000;
  * it shows, then onEvent names each row that changed. The server ends the stream when the token expires and
  * this reconnects with the renewed one.
  */
-export function useLive(onSync: () => void, onEvent: (event: LiveEvent) => void) {
+export function useLive(onSync: () => void, onEvent: (event: LiveEvent) => void, enabled = true) {
   const { apiFetch, me } = useAuth();
   const handlers = useRef({ onSync, onEvent });
   useEffect(() => {
@@ -25,6 +25,7 @@ export function useLive(onSync: () => void, onEvent: (event: LiveEvent) => void)
   const locationId = me?.current_location_id;
 
   useEffect(() => {
+    if (!enabled) return;
     const abort = new AbortController();
     void (async () => {
       while (!abort.signal.aborted) {
@@ -60,5 +61,5 @@ export function useLive(onSync: () => void, onEvent: (event: LiveEvent) => void)
       }
     })();
     return () => abort.abort();
-  }, [apiFetch, locationId]);
+  }, [apiFetch, locationId, enabled]);
 }

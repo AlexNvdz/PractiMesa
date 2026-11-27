@@ -81,6 +81,51 @@
   }
 }
 
+/* Menu list: the bar's lane is always reserved (8px, inside the right padding), so the selected pill keeps
+   the same width whether or not the list overflows; the thumb only shows while the pointer is over it. */
+@utility rail-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  &:hover,
+  &:focus-within {
+    scrollbar-color: rgb(23 30 46 / 0.2) transparent;
+  }
+  @supports selector(::-webkit-scrollbar) {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+    &:hover,
+    &:focus-within {
+      scrollbar-color: auto;
+    }
+    &::-webkit-scrollbar {
+      width: 8px;
+    }
+    &::-webkit-scrollbar-track,
+    &::-webkit-scrollbar-button {
+      background: transparent;
+      display: none;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: transparent padding-box;
+      border-radius: 999px;
+      transition: background-color 0.2s;
+    }
+    &:hover::-webkit-scrollbar-thumb,
+    &:focus-within::-webkit-scrollbar-thumb {
+      background-color: rgb(23 30 46 / 0.18);
+    }
+  }
+}
+
+/* Panel surface: the edge is a shadow ring (not a border) so it elevates; the transparent border keeps it visible in forced colors. */
+@utility pm-card {
+  background: var(--color-surface);
+  border: 1px solid transparent;
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px rgb(23 30 46 / 0.07), 0 1px 2px rgb(23 30 46 / 0.04);
+}
+
 /* Money and counts align in columns. */
 @utility figures {
   font-variant-numeric: tabular-nums;

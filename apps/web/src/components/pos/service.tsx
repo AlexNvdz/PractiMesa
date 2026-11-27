@@ -23,6 +23,8 @@ import {
   type OrderRound,
   type Product,
   toServe,
+  hasReady,
+  readyCount,
 } from "@/lib/pos";
 import { AccountPanel } from "./account-panel";
 import { ChargeForm } from "./charge-dialog";
@@ -49,9 +51,6 @@ interface Confirm {
 
 const CHARGE_ROLES = new Set(["OWNER", "ADMIN", "CASHIER"]);
 const STATUS_LABEL = { FREE: "Libre", OCCUPIED: "Ocupada", RESERVED: "Reservada" } as const;
-
-/** A round the kitchen finished and nobody has taken to the table yet. */
-const hasReady = (o: Order) => o.order_rounds.some((r) => r.status === "READY");
 
 /** Clock for elapsed times ("12 min"), refreshed every half minute. */
 export function useNow() {
@@ -164,8 +163,8 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
   const pickups = inService.filter((o) => o.order_type === "PICKUP").sort((a, b) => a.order_number - b.order_number);
   const hasSelection = selected !== null && (!picked || here.length > 0);
   // A table with two orders ready still counts once.
-  const readyCount = new Set(inService.filter(hasReady).map((o) => o.table_id ?? o.id)).size;
-  useEffect(() => onReady?.(readyCount), [onReady, readyCount]);
+  const ready = readyCount(inService);
+  useEffect(() => onReady?.(ready), [onReady, ready]);
 
   const run = async (work: () => Promise<void>) => {
     setBusy(true);

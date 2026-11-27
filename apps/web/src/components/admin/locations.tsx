@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, Plus } from "lucide-react";
+import { Check, LoaderCircle, Lock, Pencil, Plus, Power } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { button, field } from "@/components/ui";
@@ -42,7 +42,7 @@ export function Locations({ me }: { me: Me }) {
 
   if (!locations) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (
@@ -66,36 +66,70 @@ export function Locations({ me }: { me: Me }) {
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <p className="figures text-sm text-muted">
-          {locations.length} de {limit} {limit === 1 ? "sede" : "sedes"} de tu plan
-          {full && (me.organization.plan_tier === "SINGLE" ? " · Para abrir otra sede, cambia al plan Multilocal." : " · Llegaste al tope de tu plan.")}
-        </p>
-        <button type="button" disabled={full} onClick={() => setEditing("new")} className={`${button.primary} ml-auto pl-3.5`}>
-          <Plus size={18} strokeWidth={2.25} aria-hidden />
-          Nueva sede
-        </button>
-      </div>
+      {/* Plan: one slot per location the plan allows, filled by the ones that exist. */}
+      <section aria-label="Plan" className="mb-6 flex flex-wrap items-center gap-x-6 gap-y-3 pm-card px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <h2 className="figures font-display text-[17px] font-bold tracking-[-0.01em]">
+            {locations.length} de {limit} {limit === 1 ? "sede" : "sedes"} de tu plan
+          </h2>
+          <p className="text-sm text-muted text-pretty">
+            {me.organization.plan_tier === "SINGLE" ? "Plan Pequeño. Para abrir otra sede, cambia al plan Multilocal." : "Plan Multilocal. Para más sedes, escríbenos y ampliamos tu tope."}
+          </p>
+        </div>
+        <span className={`rounded-full px-2.5 py-0.5 text-[12.5px] font-bold ${full ? "bg-warning-soft text-warning" : "bg-success-soft text-success"}`}>
+          {full ? "Tope alcanzado" : `${limit - locations.length} ${limit - locations.length === 1 ? "disponible" : "disponibles"}`}
+        </span>
+        <div aria-hidden className="flex w-full gap-1.5">
+          {Array.from({ length: limit }, (_, i) => (
+            <i
+              key={i}
+              className={`h-2 flex-1 rounded-full ${locations[i] ? (locations[i].is_active ? "bg-accent" : "bg-line-strong") : "border-[1.5px] border-dashed border-line-strong"}`}
+            />
+          ))}
+        </div>
+      </section>
 
-      <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
         {locations.map((l) => (
           <li key={l.id}>
             <button
               type="button"
               onClick={() => setEditing(l)}
-              className="flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground"
+              className="flex h-full min-h-40 w-full flex-col overflow-hidden pm-card text-left transition-shadow duration-150 hover:shadow-[0_0_0_1px_rgb(23_30_46/0.2),0_1px_2px_rgb(23_30_46/0.04)]"
             >
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-medium">{l.name}</span>
-                <span className="block truncate text-sm text-muted">
+              <span className="flex-1 px-4 pt-4 pb-3">
+                <span className={`block font-display text-xl font-bold tracking-[-0.02em] ${l.is_active ? "" : "text-muted"}`}>{l.name}</span>
+                <span className="mt-1 block text-sm text-muted">
                   {l.address} · {l.city}
-                  {l.phone_whatsapp && ` · ${l.phone_whatsapp}`}
+                </span>
+                {l.phone_whatsapp && <span className="figures mt-0.5 block text-sm text-muted">WhatsApp {l.phone_whatsapp}</span>}
+              </span>
+              {/* Base band, like the tables: the state in words. */}
+              <span className={`flex h-9 shrink-0 items-center gap-2 px-4 text-[13.5px] font-bold ${l.is_active ? "bg-success-soft text-success" : "bg-ground text-muted"}`}>
+                {l.is_active ? <Check size={16} strokeWidth={2.5} aria-hidden /> : <Power size={16} strokeWidth={2.5} aria-hidden />}
+                {l.is_active ? "Activa" : "Inactiva"}
+                <span className="ml-auto flex items-center gap-1 font-semibold">
+                  <Pencil size={14} aria-hidden />
+                  Editar
                 </span>
               </span>
-              {!l.is_active && <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">Inactiva</span>}
             </button>
           </li>
         ))}
+        <li>
+          <button
+            type="button"
+            disabled={full}
+            onClick={() => setEditing("new")}
+            className="flex h-full min-h-40 w-full flex-col items-center justify-center gap-1.5 rounded-panel border-[1.5px] border-dashed border-line-strong px-6 text-center font-semibold text-ink-2 transition-[border-color,background-color] duration-150 hover:enabled:border-muted hover:enabled:bg-surface disabled:cursor-not-allowed disabled:text-muted"
+          >
+            {full ? <Lock size={22} aria-hidden /> : <Plus size={22} aria-hidden />}
+            {full ? "Llegaste al tope de tu plan" : "Agregar sede"}
+            <small className="text-[13px] font-normal text-muted text-pretty">
+              {full ? "Desactivar una sede no libera cupo." : "Nombre, ciudad y dirección. Las mesas se crean después."}
+            </small>
+          </button>
+        </li>
       </ul>
 
       <Dialog open={editing !== null} onClose={() => setEditing(null)} title={location ? location.name : "Nueva sede"}>

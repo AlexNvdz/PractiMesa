@@ -11,11 +11,11 @@ export function LogoMark({ size = 40, className }: { size?: number; className?: 
 }
 
 /** Mark + name. The name is real text, so the logo reads as "PractiMesa" to screen readers. */
-export function Logo({ size = 40, className, nameClassName }: { size?: number; className?: string; nameClassName?: string }) {
+export function Logo({ size = 40, className, nameClassName, ink = false }: { size?: number; className?: string; nameClassName?: string; /** Darker name, as in the menu. */ ink?: boolean }) {
   return (
     <span className={`flex items-center gap-3 ${className ?? ""}`}>
       <LogoMark size={size} />
-      <span className={`font-display font-[750] tracking-[-0.025em] whitespace-nowrap text-accent [font-variation-settings:'opsz'_48] ${nameClassName ?? ""}`}>
+      <span className={`font-display font-[750] tracking-[-0.025em] whitespace-nowrap ${ink ? "text-ink" : "text-accent"} [font-variation-settings:'opsz'_48] ${nameClassName ?? ""}`}>
         PractiMesa
       </span>
     </span>

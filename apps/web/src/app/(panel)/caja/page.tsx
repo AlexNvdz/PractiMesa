@@ -1,11 +1,11 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Lock, Wallet } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { type ActivityEntry, ActivityLine } from "@/components/admin/activity";
 import { PanelLoading, PanelShell } from "@/components/panel-shell";
 import { CashKeypad } from "@/components/pos/cash-keypad";
-import { button } from "@/components/ui";
+import { button, tag } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import { type Me, useRequiredMe } from "@/lib/auth";
 import { cop, time } from "@/lib/format";
@@ -83,57 +83,75 @@ function CashRegisters({ me }: { me: Me }) {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="max-w-[1240px] space-y-5">
       {closed && <CountResult register={closed} />}
 
-      <section aria-labelledby="estado" className="rounded-panel border border-line bg-surface p-5 sm:p-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 id="estado" className="font-display text-lg font-bold tracking-[-0.01em]">
-            {current ? "Caja abierta" : "Caja cerrada"}
-          </h2>
+      <div className="grid items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_360px]">
+        <section aria-labelledby="estado" className="pm-card p-[22px]">
+          <div className="mb-[18px] flex items-center gap-3">
+            <span aria-hidden className={`grid size-11 shrink-0 place-items-center rounded-full ${current ? "bg-ready-soft text-ready-ink" : "bg-[#eceee9] text-ink-2"}`}>
+              {current ? <Wallet size={20} /> : <Lock size={20} />}
+            </span>
+            <div className="min-w-0">
+              <h2 id="estado" className="font-display text-2xl font-bold tracking-[-0.02em]">
+                {current ? "Caja abierta" : "Caja cerrada"}
+              </h2>
+              <p className="text-sm text-muted">
+                {current ? `Desde las ${time(current.opened_at)} · ${current.users?.full_name ?? "—"}` : "Ábrela con la base del día para empezar a cobrar."}
+              </p>
+            </div>
+            <span className={`${current ? tag.ok : tag.mute} ml-auto`}>{current ? "En turno" : "Sin abrir"}</span>
+          </div>
+
           {current && (
-            <p className="text-sm text-muted">
-              Desde las {time(current.opened_at)} · {current.users?.full_name ?? "—"} · base{" "}
-              <span className="figures font-medium text-ink-2">{cop(current.opening_amount_cop)}</span>
+            <>
+              <dl className="mb-[22px] grid grid-cols-2 gap-2.5 min-[1100px]:grid-cols-4">
+                <div className="rounded-xl bg-ground px-3.5 py-3">
+                  <dt className="text-[12.5px] font-semibold text-muted">Base</dt>
+                  <dd className="figures mt-0.5 text-lg font-extrabold">{cop(current.opening_amount_cop)}</dd>
+                </div>
+              </dl>
+              <p className="-mt-2.5 mb-[18px] text-[13.5px] text-muted">
+                Al cerrar, cuenta el efectivo del cajón. El sistema lo compara con la base más las ventas en efectivo y sus propinas.
+              </p>
+            </>
+          )}
+
+          <form onSubmit={submit}>
+            <CashKeypad key={round} label={current ? "Efectivo contado" : "Base para abrir"} disabled={busy} onChange={setAmount} />
+            <div className="figures mt-4 flex items-center justify-between gap-3 rounded-[14px] bg-ground px-4 py-3.5 text-ink-2">
+              <span>{current ? "Contado" : "Base"}</span>
+              <b className="font-display text-[22px]">{cop(amount)}</b>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button type="submit" disabled={busy} className={`${button.primary} h-[52px] w-full text-base sm:w-auto`}>
+                {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
+                {current ? `Cerrar caja con ${cop(amount)}` : `Abrir caja con ${cop(amount)}`}
+              </button>
+            </div>
+          </form>
+          {error && (
+            <p role="alert" className="mt-3 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">
+              {error}
             </p>
           )}
-        </div>
-        <p className="mt-1 text-[15px] text-muted">
-          {current
-            ? "Al cerrar, cuenta el efectivo del cajón. El sistema lo compara con la base más las ventas en efectivo y sus propinas."
-            : "Ábrela con la base del día para empezar a cobrar."}
-        </p>
+        </section>
 
-        <form onSubmit={submit} className="mt-5 space-y-4">
-          <CashKeypad key={round} label={current ? "Efectivo contado" : "Base inicial"} disabled={busy} onChange={setAmount} />
-          <div className="flex justify-end">
-            <button type="submit" disabled={busy} className={`${button.primary} w-full sm:w-auto`}>
-              {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
-              {current ? `Cerrar caja con ${cop(amount)}` : `Abrir caja con ${cop(amount)}`}
-            </button>
-          </div>
-        </form>
-        {error && (
-          <p role="alert" className="mt-3 rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">
-            {error}
-          </p>
-        )}
-      </section>
-
-      <section aria-labelledby="hoy">
-        <h2 id="hoy" className="text-sm font-semibold text-ink-2">
-          Aperturas y cierres de hoy
-        </h2>
-        {today.length ? (
-          <ul className="mt-3 divide-y divide-line rounded-panel border border-line bg-surface">
-            {today.map((entry) => (
-              <ActivityLine key={entry.id} entry={entry} />
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-3 text-[15px] text-muted">Hoy todavía no se ha abierto ni cerrado la caja en esta sede.</p>
-        )}
-      </section>
+        <aside aria-labelledby="hoy" className="pm-card px-5 py-[18px]">
+          <h2 id="hoy" className="mb-3 text-[15px] font-bold">
+            Aperturas y cierres de hoy
+          </h2>
+          {today.length ? (
+            <ul className="-mx-5 divide-y divide-line">
+              {today.map((entry) => (
+                <ActivityLine key={entry.id} entry={entry} />
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted">Hoy todavía no se ha abierto ni cerrado la caja en esta sede.</p>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
