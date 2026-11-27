@@ -4,9 +4,11 @@ import { LoaderCircle, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type ActivityEntry, ActivityLine } from "@/components/admin/activity";
 import { Dialog } from "@/components/dialog";
-import { Sentinel, useWindowed } from "@/components/sentinel";
+import { FormAlert } from "@/components/form-alert";
+import { Sentinel } from "@/components/sentinel";
 import { button, choice, field, seg, segItem } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
+import { useDebounced, usePagedList } from "@/lib/paged";
 import type { Me } from "@/lib/auth";
 import { fold, qty } from "@/lib/format";
 import type { Ingredient, LocationStock } from "@/lib/pos";
@@ -50,93 +52,93 @@ export function StockMeter({ stock, unit, big = false }: { stock?: LocationStock
 const decimal = (text: string) => (text.trim() ? Number(text.replace(",", ".")) : 0);
 const same = (a: string, b: string) => fold(a.trim()) === fold(b.trim());
 
-/** The stock list, shown page by page (30 rows, more as the end comes near) so a long list stays light. */
+/** One row of the paged inventory: the ingredient and its stock at this location. */
+interface StockItem extends Ingredient {
+  current_qty: string;
+  min_alert_qty: string;
+}
+const stockOf = (item: StockItem): LocationStock => ({ ingredient_id: item.id, current_qty: item.current_qty, min_alert_qty: item.min_alert_qty });
+interface Counts {
+  all: number;
+  alert: number;
+  out: number;
+}
+
+/** The stock list. Rows arrive page by page; the end of the list asks for the next one before it is reached. */
 function StockRows({
   rows,
-  stock,
-  resetKey,
+  total,
+  loadMore,
+  busy,
   onOpen,
 }: {
-  rows: Ingredient[];
-  stock: Record<string, LocationStock>;
-  resetKey: string;
-  onOpen: (ingredient: Ingredient) => void;
+  rows: StockItem[];
+  total: number;
+  loadMore?: () => void;
+  busy: boolean;
+  onOpen: (item: StockItem) => void;
 }) {
-  const { visible, more, shown } = useWindowed(rows, 30, resetKey);
   return (
     <>
       <ul className="divide-y divide-line pm-card">
-        {visible.map((g) => {
-              const here = stock[g.id];
-              const state = level(here);
-              const min = Number(here?.min_alert_qty ?? 0);
-              return (
-                // Rows far off screen skip layout and paint until scrolled near: long lists stay fast.
-                <li key={g.id} className="[contain-intrinsic-size:auto_64px] [content-visibility:auto]">
-                  <button
-                    type="button"
-                    onClick={() => onOpen(g)}
-                    className="grid min-h-16 w-full grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 px-5 py-3 text-left transition-[background-color] duration-150 hover:bg-ground max-sm:grid-cols-[minmax(0,1fr)_auto]"
-                  >
-                    <span className="min-w-0 truncate text-[15px] font-semibold">
-                      {g.name}
-                      {state === "out" && <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 align-middle text-xs font-semibold text-danger">Sin stock</span>}
-                      {state === "low" && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 align-middle text-xs font-semibold text-warning">Bajo el mínimo</span>}
-                    </span>
-                    <span className="max-sm:order-last max-sm:col-span-2">
-                      <StockMeter stock={here} unit={g.unit} />
-                    </span>
-                    <span className="text-right">
-                      <span className={`figures block text-[15px] font-bold ${state === "out" ? "text-danger" : ""}`}>
-                        {qty(here?.current_qty ?? 0)} {g.unit}
-                      </span>
-                      <span className="figures block text-xs text-muted">{min > 0 ? `Mínimo ${qty(min)} ${g.unit}` : "Sin mínimo"}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
+        {rows.map((g) => {
+          const here = stockOf(g);
+          const state = level(here);
+          const min = Number(g.min_alert_qty);
+          return (
+            // Rows far off screen skip layout and paint until scrolled near: long lists stay fast.
+            <li key={g.id} className="[contain-intrinsic-size:auto_64px] [content-visibility:auto]">
+              <button
+                type="button"
+                onClick={() => onOpen(g)}
+                className="grid min-h-16 w-full grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 px-5 py-3 text-left transition-[background-color] duration-150 hover:bg-ground max-sm:grid-cols-[minmax(0,1fr)_auto]"
+              >
+                <span className="min-w-0 truncate text-[15px] font-semibold">
+                  {g.name}
+                  {state === "out" && <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 align-middle text-xs font-semibold text-danger">Sin stock</span>}
+                  {state === "low" && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 align-middle text-xs font-semibold text-warning">Bajo el mínimo</span>}
+                </span>
+                <span className="max-sm:order-last max-sm:col-span-2">
+                  <StockMeter stock={here} unit={g.unit} />
+                </span>
+                <span className="text-right">
+                  <span className={`figures block text-[15px] font-bold ${state === "out" ? "text-danger" : ""}`}>
+                    {qty(g.current_qty)} {g.unit}
+                  </span>
+                  <span className="figures block text-xs text-muted">{min > 0 ? `Mínimo ${qty(min)} ${g.unit}` : "Sin mínimo"}</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
-      <Sentinel onNear={more}>{more ? `Mostrando ${shown} de ${rows.length}` : `${rows.length} en total`}</Sentinel>
+      <Sentinel onNear={loadMore} busy={busy}>
+        {loadMore || busy ? `Mostrando ${rows.length} de ${total}` : `${total} en total`}
+      </Sentinel>
     </>
   );
 }
 
 /**
  * Inventory: ingredients (organization-wide) with their stock and alert minimum at the current location,
- * leaving out those only other locations use (Q43).
+ * leaving out those only other locations use (Q43). The server searches, filters and pages (30 at a time).
  * Sales deduct stock by recipe when an order is paid. Only the owner manages ingredients (Q53); supervisors and
  * cashiers receive goods and count stock (Q39). Owners and supervisors also see each ingredient's recent moves.
  */
 export function Inventory({ me }: { me: Me }) {
-  const api = useApi();
-  const [ingredients, setIngredients] = useState<Ingredient[] | null>(null);
-  const [stock, setStock] = useState<Record<string, LocationStock>>({});
   const [query, setQuery] = useState("");
+  const search = useDebounced(query.trim());
   const [filter, setFilter] = useState<"all" | "alert" | "out">("all");
-  const [editing, setEditing] = useState<Ingredient | "new" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<StockItem | "new" | null>(null);
+  const list = usePagedList<StockItem, Counts>("/inventory", { limit: "30", filter, ...(search ? { q: search } : {}) });
   const locationName = me.locations.find((l) => l.id === me.current_location_id)?.name ?? "esta sede";
   const canManage = me.user.role === "OWNER";
   const canSeeLog = canManage || me.user.role === "ADMIN";
 
-  // The page remounts this screen when the location changes, so it loads once per location.
-  useEffect(() => {
-    void (async () => {
-      try {
-        const [all, here] = await Promise.all([api<Ingredient[]>("/ingredients?here=1"), api<LocationStock[]>("/location-stock")]);
-        setIngredients(all);
-        setStock(Object.fromEntries(here.map((s) => [s.ingredient_id, s])));
-      } catch (err) {
-        setError(errorMessage(err));
-      }
-    })();
-  }, [api]);
-
-  if (!ingredients) {
-    return error ? (
+  if (!list.items || !list.counts) {
+    return list.error ? (
       <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
-        {error}
+        {list.error}
       </p>
     ) : (
       <p role="status" className="py-10 text-center text-[15px] text-muted">
@@ -145,10 +147,8 @@ export function Inventory({ me }: { me: Me }) {
     );
   }
 
-  const alerts = ingredients.filter((g) => level(stock[g.id]));
-  const out = alerts.filter((g) => level(stock[g.id]) === "out");
-  const shown = (filter === "alert" ? alerts : filter === "out" ? out : ingredients).filter((g) => !query || fold(g.name).includes(fold(query)));
-  const ingredient = editing === "new" ? undefined : (editing ?? undefined);
+  const { items, counts } = list;
+  const item = editing === "new" ? undefined : (editing ?? undefined);
 
   return (
     <div>
@@ -162,9 +162,9 @@ export function Inventory({ me }: { me: Me }) {
           <legend className="sr-only">Mostrar</legend>
           {(
             [
-              { value: "all", label: "Todos", count: ingredients.length },
-              { value: "alert", label: "Con alerta", count: alerts.length },
-              { value: "out", label: "Sin stock", count: out.length },
+              { value: "all", label: "Todos", count: counts.all },
+              { value: "alert", label: "Con alerta", count: counts.alert },
+              { value: "out", label: "Sin stock", count: counts.out },
             ] as const
           ).map((f) => (
             <label key={f.value} className={`${segItem} max-sm:flex-1`}>
@@ -188,7 +188,9 @@ export function Inventory({ me }: { me: Me }) {
         )}
       </div>
 
-      {!ingredients.length ? (
+      {list.error && <FormAlert>{list.error}</FormAlert>}
+
+      {!counts.all ? (
         <p className="pm-card px-5 py-10 text-center text-[15px] text-muted">
           {canManage ? (
             <>Todavía no hay ingredientes. Crea el primero con &ldquo;Nuevo ingrediente&rdquo; y luego úsalo en las recetas del catálogo.</>
@@ -196,10 +198,10 @@ export function Inventory({ me }: { me: Me }) {
             "Todavía no hay ingredientes. El dueño los crea."
           )}
         </p>
-      ) : !shown.length ? (
+      ) : !items.length ? (
         <p className="py-10 text-center text-[15px] text-muted">
-          {query ? (
-            <>Ningún ingrediente coincide con &ldquo;{query}&rdquo;.</>
+          {search ? (
+            <>Ningún ingrediente coincide con &ldquo;{search}&rdquo;.</>
           ) : filter === "out" ? (
             "Ningún ingrediente está sin stock."
           ) : (
@@ -207,38 +209,38 @@ export function Inventory({ me }: { me: Me }) {
           )}
         </p>
       ) : (
-        <section aria-labelledby="stock-title">
+        <section aria-labelledby="stock-title" aria-busy={list.stale} className={list.stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
           <h2 id="stock-title" className="mb-1 font-display text-[17px] font-semibold tracking-[-0.01em]">
             Stock en {locationName}
           </h2>
           <p className="mb-3 text-sm text-muted">Cada barra muestra cuánto hay; la marca oscura es el mínimo que dispara la alerta.</p>
-          <StockRows rows={shown} stock={stock} resetKey={`${query}|${filter}`} onOpen={setEditing} />
+          <StockRows rows={items} total={list.total} loadMore={list.loadMore} busy={list.loadingMore} onOpen={setEditing} />
         </section>
       )}
 
       <Dialog
         open={editing !== null}
         onClose={() => setEditing(null)}
-        title={ingredient ? ingredient.name : "Nuevo ingrediente"}
-        subtitle={ingredient ? `Inventario en ${locationName}` : undefined}
+        title={item ? item.name : "Nuevo ingrediente"}
+        subtitle={item ? `Inventario en ${locationName}` : undefined}
         side
       >
         <IngredientForm
-          key={ingredient?.id ?? "new"}
-          ingredient={ingredient}
+          key={item?.id ?? "new"}
+          ingredient={item}
           canManage={canManage}
           canSeeLog={canSeeLog}
-          stock={ingredient ? stock[ingredient.id] : undefined}
-          taken={ingredients.filter((g) => g.id !== ingredient?.id).map((g) => g.name)}
+          stock={item ? stockOf(item) : undefined}
+          // Names on screen only: the server has the last word on a repeated name (409).
+          taken={items.filter((g) => g.id !== item?.id).map((g) => g.name)}
           locationName={locationName}
-          onSaved={(saved, here) => {
-            setIngredients((all) => [...(all ?? []).filter((g) => g.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, "es")));
-            if (here) setStock((all) => ({ ...all, [saved.id]: here }));
+          onSaved={() => {
             setEditing(null);
+            list.reload();
           }}
-          onDeleted={(id) => {
-            setIngredients((all) => all?.filter((g) => g.id !== id) ?? null);
+          onDeleted={() => {
             setEditing(null);
+            list.reload();
           }}
         />
       </Dialog>

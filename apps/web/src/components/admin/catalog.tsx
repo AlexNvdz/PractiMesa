@@ -8,7 +8,8 @@ import { type Undo, UndoToast } from "@/components/undo-toast";
 import { button, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import type { Me } from "@/lib/auth";
-import { cop, fold } from "@/lib/format";
+import { cop } from "@/lib/format";
+import { useDebounced, usePagedList } from "@/lib/paged";
 import type { Category, LocationProduct, Product } from "@/lib/pos";
 import { ProductForm, TAXES } from "./product-form";
 
@@ -17,45 +18,40 @@ import { ProductForm, TAXES } from "./product-form";
  * data is organization-wide; price and availability are per location. Only the owner edits it (Q53): a
  * supervisor reads it and marks products sold out today at its location.
  */
+/** A product as the paged catalog sends it: with this location's price and availability (`local`), if any. */
+type CatalogItem = Product & { local: LocationProduct | null };
+
 export function Catalog({ me }: { me: Me }) {
   const api = useApi();
-  const [products, setProducts] = useState<Product[] | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [local, setLocal] = useState<Record<string, LocationProduct>>({});
+  // Availability switched on this screen, over what the page said.
+  const [changed, setChanged] = useState<Record<string, LocationProduct>>({});
   const [query, setQuery] = useState("");
-  // Products appear 24 at a time (across categories); more as the end of the list comes near.
-  const [paging, setPaging] = useState({ key: "", count: 24 });
+  const search = useDebounced(query.trim());
   // "" = the whole menu.
   const [cat, setCat] = useState("");
-  const [editing, setEditing] = useState<Product | "new" | null>(null);
+  const [editing, setEditing] = useState<CatalogItem | "new" | null>(null);
   const [managing, setManaging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const list = usePagedList<CatalogItem, Record<string, number>>("/products/page", {
+    limit: "24",
+    ...(search ? { q: search } : {}),
+    ...(cat ? { category: cat } : {}),
+  });
   const owner = me.user.role === "OWNER";
   const locationName = me.locations.find((l) => l.id === me.current_location_id)?.name ?? "esta sede";
   const multi = me.organization.plan_tier === "MULTI";
 
-  // The page remounts this screen when the location changes, so it loads once per location.
+  // The page remounts this screen when the location changes, so the categories load once per location.
   useEffect(() => {
-    void (async () => {
-      try {
-        const [p, c, l] = await Promise.all([
-          api<Product[]>("/products"),
-          api<Category[]>("/categories"),
-          api<LocationProduct[]>("/location-products"),
-        ]);
-        setProducts(p);
-        setCategories(c);
-        setLocal(Object.fromEntries(l.map((x) => [x.product_id, x])));
-      } catch (err) {
-        setError(errorMessage(err));
-      }
-    })();
+    api<Category[]>("/categories").then(setCategories, (err) => setCategoriesError(errorMessage(err)));
   }, [api]);
 
-  if (!products) {
+  const error = list.error ?? categoriesError;
+  if (!list.items || !list.counts) {
     return error ? (
       <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
@@ -67,38 +63,31 @@ export function Catalog({ me }: { me: Me }) {
     );
   }
 
-  // Chain products plus this location's own ones; other locations' own products are theirs to manage (Q43).
-  const visible = products.filter((p) => !p.location_id || p.location_id === me.current_location_id);
-  const shown = query ? visible.filter((p) => fold(p.name).includes(fold(query))) : visible;
-  const inCategory = (id: string) => (p: Product) =>
-    id === "none" ? !p.category_id || !categories.some((c) => c.id === p.category_id) : p.category_id === id;
-  const all = [...categories.map((c) => ({ id: c.id, name: c.name })), { id: "none", name: "Sin categoría" }]
-    .map((c) => ({ ...c, count: visible.filter(inCategory(c.id)).length }))
-    .filter((c) => c.count || c.id !== "none");
-  const groups = all
-    .filter((c) => !cat || c.id === cat)
-    .map((c) => ({ ...c, items: shown.filter(inCategory(c.id)) }))
-    .filter((g) => g.items.length);
+  const { items, counts } = list;
+  const everything = counts.all ?? 0;
+  const chips = [
+    { id: "", name: "Todo el menú", count: everything },
+    ...categories.map((c) => ({ id: c.id, name: c.name, count: counts[c.id] ?? 0 })),
+    ...(counts.none ? [{ id: "none", name: "Sin categoría", count: counts.none }] : []),
+  ];
+  // Pages come in category order, so each group is a run of neighbours; its number is the whole category's.
+  const name = (id: string) => (id === "none" ? "Sin categoría" : (categories.find((c) => c.id === id)?.name ?? "Sin categoría"));
+  const groups: { id: string; name: string; items: CatalogItem[] }[] = [];
+  for (const item of items) {
+    const id = item.category_id && categories.some((c) => c.id === item.category_id) ? item.category_id : "none";
+    const last = groups.at(-1);
+    if (last?.id === id) last.items.push(item);
+    else groups.push({ id, name: name(id), items: [item] });
+  }
   const product = editing === "new" ? undefined : (editing ?? undefined);
-  const windowKey = `${query}|${cat}`;
-  const cap = paging.key === windowKey ? paging.count : 24;
-  const total = groups.reduce((n, g) => n + g.items.length, 0);
-  let left = cap;
-  const paged = groups
-    .map((g) => {
-      const items = g.items.slice(0, Math.max(0, left));
-      left -= items.length;
-      return { ...g, items };
-    })
-    .filter((g) => g.items.length);
-  const more = cap < total ? () => setPaging({ key: windowKey, count: cap + 24 }) : undefined;
+  const overrideOf = (p: CatalogItem) => changed[p.id] ?? p.local ?? undefined;
 
-  const setAvailable = async (p: Product, available: boolean) => {
+  const setAvailable = async (p: CatalogItem, available: boolean) => {
     setToggling(p.id);
     setRowError(null);
     try {
       const saved = await api<LocationProduct>(`/location-products/${p.id}`, "PUT", { is_available: available });
-      setLocal((all) => ({ ...all, [p.id]: saved }));
+      setChanged((all) => ({ ...all, [p.id]: saved }));
       return true;
     } catch (err) {
       setRowError({ id: p.id, message: errorMessage(err) });
@@ -109,8 +98,8 @@ export function Catalog({ me }: { me: Me }) {
   };
 
   // "Disponible hoy" switch: applies at once and can be undone for a few seconds.
-  const toggleSoldOut = async (p: Product) => {
-    const available = local[p.id]?.is_available !== false;
+  const toggleSoldOut = async (p: CatalogItem) => {
+    const available = overrideOf(p)?.is_available !== false;
     if (await setAvailable(p, !available)) {
       setUndo({
         message: `${p.name} · ${available ? "agotado hoy" : "disponible hoy"}`,
@@ -147,20 +136,20 @@ export function Catalog({ me }: { me: Me }) {
         )}
       </div>
 
-      {!visible.length && (
+      {!everything && !search && (
         <p className="pm-card px-5 py-10 text-center text-[15px] text-muted">
           {owner ? <>Todavía no hay productos. Crea el primero con &ldquo;Nuevo producto&rdquo;.</> : "Todavía no hay productos."}
         </p>
       )}
 
-      {visible.length > 0 && (
+      {(everything > 0 || search) && (
         <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
           {/* Categories: a sticky list beside the products; a sideways strip on smaller screens. */}
           <ul
             aria-label="Categorías"
             className="flex gap-1 overflow-x-auto pm-card p-1.5 [scrollbar-width:none] lg:sticky lg:top-[92px] lg:grid lg:overflow-visible"
           >
-            {[{ id: "", name: "Todo el menú", count: visible.length }, ...all].map((c) => (
+            {chips.map((c) => (
               <li key={c.id} className="shrink-0">
                 <button
                   type="button"
@@ -175,21 +164,21 @@ export function Catalog({ me }: { me: Me }) {
             ))}
           </ul>
 
-          <div>
+          <div aria-busy={list.stale} className={list.stale ? "opacity-60 transition-opacity" : "transition-opacity"}>
             {!groups.length && (
               <p className="rounded-panel border border-dashed border-line-strong px-5 py-10 text-center text-[15px] text-muted">
-                {query ? <>Ningún producto coincide con &ldquo;{query}&rdquo;.</> : "Sin productos en esta categoría."}
+                {search ? <>Ningún producto coincide con &ldquo;{search}&rdquo;.</> : "Sin productos en esta categoría."}
               </p>
             )}
-            {paged.map((g) => (
+            {groups.map((g) => (
               <section key={g.id} aria-labelledby={`cat-${g.id}`} className="mb-8 last:mb-0">
                 <h2 id={`cat-${g.id}`} className="mb-3 flex items-baseline gap-2 font-display text-[17px] font-semibold tracking-[-0.01em]">
                   {g.name}
-                  <span className="figures font-sans text-[13.5px] font-medium text-muted">{groups.find((x) => x.id === g.id)?.items.length ?? g.items.length}</span>
+                  <span className="figures font-sans text-[13.5px] font-medium text-muted">{counts[g.id] ?? g.items.length}</span>
                 </h2>
                 <ul className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-3">
                   {g.items.map((p) => {
-                    const override = local[p.id];
+                    const override = overrideOf(p);
                     const price = override?.custom_price_cop ?? p.base_price_cop;
                     const sellable = p.is_active && override?.is_listed !== false;
                     const soldOut = override?.is_available === false;
@@ -266,7 +255,11 @@ export function Catalog({ me }: { me: Me }) {
                 </ul>
               </section>
             ))}
-            {total > 0 && <Sentinel onNear={more}>{more ? `Mostrando ${cap} de ${total}` : `${total} en total`}</Sentinel>}
+            {list.total > 0 && (
+              <Sentinel onNear={list.loadMore} busy={list.loadingMore}>
+                {list.loadMore || list.loadingMore ? `Mostrando ${items.length} de ${list.total}` : `${list.total} en total`}
+              </Sentinel>
+            )}
           </div>
         </div>
       )}
@@ -278,23 +271,29 @@ export function Catalog({ me }: { me: Me }) {
           key={product?.id ?? "new"}
           product={product}
           categories={categories}
-          local={product ? local[product.id] : undefined}
+          local={product ? overrideOf(product) : undefined}
           locationName={locationName}
           multi={multi}
           onSaved={(saved, here) => {
-            setProducts((all) => [...(all ?? []).filter((p) => p.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, "es")));
-            setLocal((all) => ({ ...all, [saved.id]: here }));
+            setChanged((all) => ({ ...all, [saved.id]: here }));
             setEditing(null);
+            list.reload();
           }}
-          onDeleted={(id) => {
-            setProducts((all) => all?.filter((p) => p.id !== id) ?? null);
+          onDeleted={() => {
             setEditing(null);
+            list.reload();
           }}
         />
       </Dialog>
 
       <Dialog open={managing} onClose={() => setManaging(false)} title="Categorías">
-        <Categories categories={categories} onChange={setCategories} />
+        <Categories
+          categories={categories}
+          onChange={(next) => {
+            setCategories(next);
+            list.reload();
+          }}
+        />
       </Dialog>
     </div>
   );
