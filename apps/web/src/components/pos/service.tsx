@@ -259,7 +259,7 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
       await api(`/kitchen/rounds/${round.id}`, "PUT", { status: "DELIVERED" });
       setRound(orderId, round.id, "DELIVERED");
       setUndo({
-        message: `${order.dining_tables?.name ?? `Para llevar #${order.order_number}`} · ronda ${round.round}: entregada`,
+        message: `${order.dining_tables?.name ?? `Para llevar ${pickupLabel(order)}`} · ronda ${round.round}: entregada`,
         run: () =>
           run(async () => {
             await api(`/kitchen/rounds/${round.id}`, "PUT", { status: "READY", from: "DELIVERED" });
@@ -431,7 +431,7 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
         )}
       </aside>
 
-      <Dialog open={charged !== undefined} onClose={() => setCharging(null)} title={charged ? `Cobrar · ${charged.dining_tables?.name ?? `Pedido #${charged.order_number}`}` : ""}>
+      <Dialog open={charged !== undefined} onClose={() => setCharging(null)} title={charged ? `Cobrar · ${charged.dining_tables?.name ?? `Pedido ${pickupLabel(charged)}`}` : ""}>
         {charged && (
           <ChargeForm
             order={charged}
