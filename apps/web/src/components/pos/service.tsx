@@ -272,7 +272,7 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
 
   if (loadError && !tables) {
     return (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {loadError}
       </p>
     );
@@ -576,7 +576,7 @@ function FloorMap({
       </div>
 
       {!tables.length && (
-        <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="pm-card px-5 py-10 text-center text-[15px] text-muted">
           Esta sede todavía no tiene mesas.{canEdit && " Agrégalas con el lápiz de “Editar mesas”."}
         </p>
       )}

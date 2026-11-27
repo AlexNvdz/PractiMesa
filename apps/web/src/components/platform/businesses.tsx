@@ -35,7 +35,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
 
   if (!orgs) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (
@@ -93,7 +93,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
       </div>
 
       {shown.length ? (
-        <ul className="mt-5 divide-y divide-line rounded-panel border border-line bg-surface">
+        <ul className="mt-5 divide-y divide-line pm-card">
           {shown.map((o) => (
             <li key={o.id}>
               <button
@@ -118,7 +118,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-5 rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="mt-5 pm-card px-5 py-10 text-center text-[15px] text-muted">
           {orgs.length ? "Ningún negocio coincide con la búsqueda." : "Todavía no hay negocios."}
         </p>
       )}

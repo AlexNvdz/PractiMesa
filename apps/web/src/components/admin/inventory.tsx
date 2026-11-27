@@ -216,7 +216,13 @@ export function Inventory({ me }: { me: Me }) {
         </section>
       )}
 
-      <Dialog open={editing !== null} onClose={() => setEditing(null)} title={ingredient ? ingredient.name : "Nuevo ingrediente"}>
+      <Dialog
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={ingredient ? ingredient.name : "Nuevo ingrediente"}
+        subtitle={ingredient ? `Inventario en ${locationName}` : undefined}
+        side
+      >
         <IngredientForm
           key={ingredient?.id ?? "new"}
           ingredient={ingredient}

@@ -46,7 +46,7 @@ export default function HomePage() {
         <h3 id="hoy" className="text-sm font-semibold text-ink-2">
           Hoy
         </h3>
-        <dl className="mt-3 grid divide-y divide-line rounded-panel border border-line bg-surface sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <dl className="mt-3 grid divide-y divide-line pm-card sm:grid-cols-3 sm:divide-x sm:divide-y-0">
           {TODAY.map(({ label, value, note }) => (
             <div key={label} className="px-5 py-4">
               <dt className="text-sm text-muted">{label}</dt>
@@ -61,7 +61,7 @@ export default function HomePage() {
         <h3 id="pasos" className="text-sm font-semibold text-ink-2">
           Para empezar
         </h3>
-        <ul className="mt-3 divide-y divide-line rounded-panel border border-line bg-surface">
+        <ul className="mt-3 divide-y divide-line pm-card">
           {STEPS.map(({ icon: Icon, title, detail }) => (
             <li key={title} className="flex items-center gap-4 px-5 py-4">
               <Icon size={18} className="shrink-0 text-muted" aria-hidden />

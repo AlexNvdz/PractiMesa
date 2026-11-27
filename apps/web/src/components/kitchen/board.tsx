@@ -137,7 +137,7 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
 
   if (!rounds) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (

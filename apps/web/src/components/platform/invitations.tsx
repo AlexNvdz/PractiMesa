@@ -46,7 +46,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
 
   if (!invitations) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (
@@ -85,7 +85,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
       </p>
 
       {invitations.length ? (
-        <ul className="mt-6 divide-y divide-line rounded-panel border border-line bg-surface">
+        <ul className="mt-6 divide-y divide-line pm-card">
           {invitations.map((i) => {
             const expired = !i.used_at && !i.revoked_at && new Date(i.expires_at).getTime() <= now;
             const open = !i.used_at && !i.revoked_at && !expired;
@@ -126,7 +126,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
           })}
         </ul>
       ) : (
-        <p className="mt-6 rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="mt-6 pm-card px-5 py-10 text-center text-[15px] text-muted">
           Todavía no has creado invitaciones.
         </p>
       )}

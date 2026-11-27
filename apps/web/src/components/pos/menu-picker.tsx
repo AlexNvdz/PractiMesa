@@ -42,7 +42,7 @@ export function MenuPicker({
 
   if (!menu.length) {
     return (
-      <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+      <p className="pm-card px-5 py-10 text-center text-[15px] text-muted">
         Esta sede todavía no tiene productos en el menú.
       </p>
     );
@@ -73,7 +73,7 @@ export function MenuPicker({
               type="button"
               disabled={!item.available}
               onClick={() => (item.modifiers.length ? setChoosing(item) : onAdd({ item, quantity: 1, picks: [], notes: "" }))}
-              className="flex h-full min-h-24 w-full flex-col justify-between gap-2 rounded-panel border border-line bg-surface p-4 text-left transition-[background-color,border-color,scale] duration-150 ease-out hover:enabled:border-line-strong hover:enabled:bg-ground motion-safe:enabled:active:scale-[0.96] disabled:cursor-not-allowed"
+              className="flex h-full min-h-24 w-full flex-col justify-between gap-2 pm-card p-4 text-left transition-[background-color,border-color,scale] duration-150 ease-out hover:enabled:border-line-strong hover:enabled:bg-ground motion-safe:enabled:active:scale-[0.96] disabled:cursor-not-allowed"
             >
               <span className="text-[15px] leading-snug font-medium text-pretty">{item.name}</span>
               <span className="figures text-sm text-muted">

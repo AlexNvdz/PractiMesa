@@ -9,7 +9,7 @@ import { type Me, ROLE_LABEL, useAuth } from "@/lib/auth";
 
 const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
 const hintClass = "mt-1.5 block text-sm text-muted text-pretty";
-const panel = "rounded-panel border border-line bg-surface p-5 sm:p-6";
+const panel = "pm-card p-5 sm:p-6";
 const spinner = <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />;
 
 function Saved({ children }: { children: React.ReactNode }) {
