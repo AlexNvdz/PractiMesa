@@ -1,7 +1,8 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { logActivity } from '../activity/activity.controller';
 import { Roles } from '../common/guards/roles.guard';
+import { ACCENTS_FROM, ACCENTS_TO, likePattern, nextOffset, pageParams } from '../common/paging';
 import { requireLocation } from '../common/tenant/tenant-context';
 import { bool, MAX_COP, MAX_QTY, nullable, num, parseBody } from '../common/validation';
 import { Prisma } from '../generated/prisma/client';
@@ -45,6 +46,74 @@ export class LocationCatalogController {
     return this.prisma
       .forTenant(tenant.organizationId)
       .location_products.upsert({ where: { location_id_product_id: key }, create: { ...key, ...data }, update: data });
+  }
+
+  /**
+   * Inventory screen, one page at a time: the ingredients this location works with (Q43) and their stock here,
+   * with the counts the filters show. `q` ignores case and accents; `filter` is all | alert | out (alert = at or
+   * under the minimum, out = nothing left). Counts ignore `q` and `filter`, so the tabs always add up.
+   */
+  @Get('inventory')
+  @Roles('OWNER', 'ADMIN', 'CASHIER')
+  async inventory(
+    @Req() req: Request,
+    @Query('q') q?: string,
+    @Query('filter') filter?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const tenant = req.tenant!;
+    const loc = requireLocation(tenant);
+    if (filter !== undefined && !['all', 'alert', 'out'].includes(filter)) throw new BadRequestException('filter inválido');
+    const page = pageParams(limit, offset);
+    const pattern = q?.trim() ? likePattern(q) : '%';
+    const level = filter === 'out' ? Prisma.sql`current_qty <= 0` : filter === 'alert' ? Prisma.sql`current_qty <= min_alert_qty OR current_qty <= 0` : Prisma.sql`TRUE`;
+    return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
+      const base = Prisma.sql`
+        WITH visible AS (
+          SELECT i.id, i.name, i.unit,
+                 COALESCE(s.current_qty, 0) AS current_qty, COALESCE(s.min_alert_qty, 0) AS min_alert_qty
+            FROM ingredients i
+            LEFT JOIN location_stock s ON s.ingredient_id = i.id AND s.location_id = ${loc}::uuid
+           WHERE s.ingredient_id IS NOT NULL
+              OR NOT EXISTS (SELECT 1 FROM product_recipes r WHERE r.ingredient_id = i.id)
+              OR EXISTS (
+                   SELECT 1 FROM product_recipes r JOIN products p ON p.id = r.product_id
+                    WHERE r.ingredient_id = i.id
+                      AND (p.location_id IS NULL OR p.location_id = ${loc}::uuid)
+                      AND NOT EXISTS (SELECT 1 FROM location_products lp
+                                       WHERE lp.product_id = p.id AND lp.location_id = ${loc}::uuid AND lp.is_listed = false))
+        )`;
+      const [counts] = await tx.$queryRaw<{ all: number; alert: number; out: number }[]>`
+        ${base}
+        SELECT count(*)::int AS "all",
+               count(*) FILTER (WHERE current_qty <= min_alert_qty OR current_qty <= 0)::int AS alert,
+               count(*) FILTER (WHERE current_qty <= 0)::int AS "out"
+          FROM visible`;
+      const rows = await tx.$queryRaw<{ id: string; name: string; unit: string; current_qty: Prisma.Decimal; min_alert_qty: Prisma.Decimal; total: number }[]>`
+        ${base}
+        SELECT *, count(*) OVER ()::int AS total
+          FROM visible
+         WHERE (${level}) AND translate(lower(name), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\'
+         ORDER BY name, id
+         LIMIT ${page.limit} OFFSET ${page.offset}`;
+      // An offset past the end returns no rows: ask for the total again so the client still gets it.
+      const total = rows[0]?.total ?? (page.offset ? await this.inventoryTotal(tx, base, level, pattern) : 0);
+      return {
+        items: rows.map(({ total: _total, ...item }) => item),
+        total,
+        next: nextOffset(page.offset, page.limit, total),
+        counts,
+      };
+    });
+  }
+
+  private async inventoryTotal(tx: Prisma.TransactionClient, base: Prisma.Sql, level: Prisma.Sql, pattern: string) {
+    const [row] = await tx.$queryRaw<{ total: number }[]>`
+      ${base}
+      SELECT count(*)::int AS total FROM visible
+       WHERE (${level}) AND translate(lower(name), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\'`;
+    return row.total;
   }
 
   @Get('location-stock')

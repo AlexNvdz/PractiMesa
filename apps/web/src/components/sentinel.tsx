@@ -33,12 +33,3 @@ export function Sentinel({ onNear, busy = false, children }: { onNear?: () => vo
     </p>
   );
 }
-
-/** Shows a growing slice of an already loaded list: first `size` items, `size` more each time the end comes near. */
-export function useWindowed<T>(items: T[], size: number, resetKey: string) {
-  const [state, setState] = useState({ key: resetKey, count: size });
-  // New search or filter: back to the first page.
-  const count = state.key === resetKey ? state.count : size;
-  const more = () => setState({ key: resetKey, count: count + size });
-  return { visible: items.slice(0, count), more: count < items.length ? more : undefined, shown: Math.min(count, items.length) };
-}
