@@ -2,6 +2,7 @@
 
 import { Check, ChevronDown, ChevronUp, Plus, Search, Tags, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { CardSkeleton } from "@/components/skeleton";
 import { Dialog } from "@/components/dialog";
 import { Sentinel } from "@/components/sentinel";
 import { type Undo, UndoToast } from "@/components/undo-toast";
@@ -57,9 +58,7 @@ export function Catalog({ me }: { me: Me }) {
         {error}
       </p>
     ) : (
-      <p role="status" className="py-10 text-center text-[15px] text-muted">
-        Cargando catálogo…
-      </p>
+      <CardSkeleton label="Cargando catálogo…" />
     );
   }
 

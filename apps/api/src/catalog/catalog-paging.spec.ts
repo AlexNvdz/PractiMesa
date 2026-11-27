@@ -39,6 +39,7 @@ describe('GET /inventory', () => {
     const [milk, coffee, sugar, , flour, odd] = await Promise.all(['Leche', 'Café', 'Azúcar', 'Sal', 'Harina', 'Té_frío'].map(make));
     const stock = (ingredient_id: string, location_id: string, current_qty: number, min_alert_qty: number) =>
       db.location_stock.create({ data: { organization_id: org.id, ingredient_id, location_id, current_qty, min_alert_qty } });
+    await db.ingredients.update({ where: { id: milk.id }, data: { category: 'Lácteos y huevos' } });
     await stock(milk.id, org.locations[0], 5, 10); // under its minimum
     await stock(coffee.id, org.locations[0], 0, 3); // nothing left
     await stock(sugar.id, org.locations[0], 100, 10); // fine
@@ -76,6 +77,9 @@ describe('GET /inventory', () => {
 
   it('searches ignoring case and accents, and takes % and _ literally', async () => {
     expect(names((await cashier('GET', '/inventory?q=CAFE')).body)).toEqual(['Café']);
+    // The group is searchable too, and comes with each row.
+    const byGroup = (await cashier('GET', '/inventory?q=LACTEOS')).body;
+    expect(byGroup.items).toMatchObject([{ name: 'Leche', category: 'Lácteos y huevos' }]);
     expect(names((await cashier('GET', '/inventory?q=azucar')).body)).toEqual(['Azúcar']);
     expect(names((await cashier('GET', '/inventory?q=_')).body)).toEqual(['Té_frío']);
     expect(names((await cashier('GET', '/inventory?q=%25')).body)).toEqual([]);

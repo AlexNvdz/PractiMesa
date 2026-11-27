@@ -160,6 +160,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new ApiError(res.status, typeof message === "string" ? message : undefined);
       }
       store((await res.json()) as TokenResponse, refresh);
+      location.current = null; // a new session never inherits another business's location
       await loadMe();
     },
     [store, refresh, loadMe],

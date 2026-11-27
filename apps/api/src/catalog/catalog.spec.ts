@@ -150,6 +150,10 @@ describe('ingredients and recipes', () => {
     expect((await ownerA('DELETE', `/ingredients/${temp}`)).status).toBe(204);
     expect((await cashierA('GET', '/ingredients')).body.map((i: { name: string }) => i.name)).toEqual(['Café molido', 'Leche']);
     expect((await ownerA('POST', '/ingredients', { name: 'Azúcar' })).status).toBe(400);
+    // The optional group is trimmed, can be cleared with null and never blank.
+    expect((await ownerA('PATCH', `/ingredients/${milk}`, { category: '  Lácteos ' })).body.category).toBe('Lácteos');
+    expect((await ownerA('PATCH', `/ingredients/${milk}`, { category: ' ' })).status).toBe(400);
+    expect((await ownerA('PATCH', `/ingredients/${milk}`, { category: null })).body.category).toBeNull();
     // A repeated name answers 409 with a clear message, ignoring case; renaming to its own name is fine.
     const repeated = await ownerA('POST', '/ingredients', { name: ' leche ', unit: 'ml' });
     expect([repeated.status, repeated.body.message]).toEqual([409, 'Ya existe un ingrediente llamado "leche"']);

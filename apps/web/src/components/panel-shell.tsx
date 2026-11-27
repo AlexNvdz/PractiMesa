@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, ViewTransition } from "react";
 import { Logo, LogoMark } from "@/components/logo";
 import { useApi } from "@/lib/api";
 import { ROLE_LABEL, useAuth, type Me, type Role } from "@/lib/auth";
@@ -369,7 +369,7 @@ export function PanelShell({
         <main
           className={`mx-auto px-3.5 pt-4 pb-[calc(96px+env(safe-area-inset-bottom))] sm:px-7 sm:pt-6 sm:pb-12 ${wide ? "max-w-[1440px]" : "max-w-[1120px]"}`}
         >
-          {children}
+          <ViewTransition key={pathname}>{children}</ViewTransition>
         </main>
       </div>
 

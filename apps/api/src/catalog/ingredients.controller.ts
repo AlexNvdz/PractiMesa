@@ -2,12 +2,12 @@ import { Body, ConflictException, Controller, Delete, Get, HttpCode, Param, Pars
 import type { Request } from 'express';
 import { Roles } from '../common/guards/roles.guard';
 import { requireLocation } from '../common/tenant/tenant-context';
-import { parseBody, text } from '../common/validation';
+import { nullable, parseBody, text } from '../common/validation';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** unit is free text ('gr', 'ml', 'und'...); recipes and stock use the same unit. */
-const INGREDIENT = { name: text(120), unit: text(20) };
+const INGREDIENT = { name: text(120), unit: text(20), category: nullable(text(40)) };
 
 /** Names are unique per business ignoring case (no DB index: older data may already repeat them). */
 async function assertNameFree(tx: Prisma.TransactionClient, name: string, exceptId?: string) {
@@ -53,6 +53,7 @@ export class IngredientsController {
   @Roles('OWNER')
   create(@Req() req: Request, @Body() body: unknown) {
     const data = parseBody<Prisma.ingredientsUncheckedCreateInput>(body, INGREDIENT, ['name', 'unit']);
+    if (typeof data.category === 'string') data.category = data.category.trim();
     return this.prisma.tenantTransaction(req.tenant!.organizationId, async (tx) => {
       await assertNameFree(tx, data.name);
       return tx.ingredients.create({ data });
@@ -63,6 +64,7 @@ export class IngredientsController {
   @Roles('OWNER')
   update(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const data = parseBody<Prisma.ingredientsUncheckedUpdateInput>(body, INGREDIENT);
+    if (typeof data.category === 'string') data.category = data.category.trim();
     return this.prisma.tenantTransaction(req.tenant!.organizationId, async (tx) => {
       if (typeof data.name === 'string') await assertNameFree(tx, data.name, id);
       return tx.ingredients.update({ where: { id }, data });

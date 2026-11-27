@@ -48,6 +48,8 @@ export interface Ingredient {
   id: string;
   name: string;
   unit: string;
+  /** Optional group shown under the name ("Lácteos"). */
+  category: string | null;
 }
 
 /** Stock of one ingredient at the current location; a missing row means 0. */

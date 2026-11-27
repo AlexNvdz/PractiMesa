@@ -50,7 +50,7 @@ export class LocationCatalogController {
 
   /**
    * Inventory screen, one page at a time: the ingredients this location works with (Q43) and their stock here,
-   * with the counts the filters show. `q` ignores case and accents; `filter` is all | alert | out (alert = at or
+   * with the counts the filters show. `q` (name or group) ignores case and accents; `filter` is all | alert | out (alert = at or
    * under the minimum, out = nothing left). Counts ignore `q` and `filter`, so the tabs always add up.
    */
   @Get('inventory')
@@ -71,7 +71,7 @@ export class LocationCatalogController {
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
       const base = Prisma.sql`
         WITH visible AS (
-          SELECT i.id, i.name, i.unit,
+          SELECT i.id, i.name, i.unit, i.category,
                  COALESCE(s.current_qty, 0) AS current_qty, COALESCE(s.min_alert_qty, 0) AS min_alert_qty
             FROM ingredients i
             LEFT JOIN location_stock s ON s.ingredient_id = i.id AND s.location_id = ${loc}::uuid
@@ -90,11 +90,11 @@ export class LocationCatalogController {
                count(*) FILTER (WHERE current_qty <= min_alert_qty OR current_qty <= 0)::int AS alert,
                count(*) FILTER (WHERE current_qty <= 0)::int AS "out"
           FROM visible`;
-      const rows = await tx.$queryRaw<{ id: string; name: string; unit: string; current_qty: Prisma.Decimal; min_alert_qty: Prisma.Decimal; total: number }[]>`
+      const rows = await tx.$queryRaw<{ id: string; name: string; unit: string; category: string | null; current_qty: Prisma.Decimal; min_alert_qty: Prisma.Decimal; total: number }[]>`
         ${base}
         SELECT *, count(*) OVER ()::int AS total
           FROM visible
-         WHERE (${level}) AND translate(lower(name), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\'
+         WHERE (${level}) AND (translate(lower(name), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\' OR translate(lower(COALESCE(category, '')), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\')
          ORDER BY name, id
          LIMIT ${page.limit} OFFSET ${page.offset}`;
       // An offset past the end returns no rows: ask for the total again so the client still gets it.
@@ -112,7 +112,7 @@ export class LocationCatalogController {
     const [row] = await tx.$queryRaw<{ total: number }[]>`
       ${base}
       SELECT count(*)::int AS total FROM visible
-       WHERE (${level}) AND translate(lower(name), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\'`;
+       WHERE (${level}) AND (translate(lower(name), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\' OR translate(lower(COALESCE(category, '')), ${ACCENTS_FROM}, ${ACCENTS_TO}) LIKE ${pattern} ESCAPE '\\')`;
     return row.total;
   }
 
