@@ -51,7 +51,7 @@ export function MenuPicker({
   return (
     <div>
       {used.length > 0 && (
-        <div role="group" aria-label="Categorías" className="-mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-1">
+        <div role="group" aria-label="Categorías" className="-mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[{ id: null, name: "Todo" }, ...used].map((c) => (
             <button
               key={c.id ?? "all"}
