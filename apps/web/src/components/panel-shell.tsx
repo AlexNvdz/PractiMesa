@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Logo, LogoMark } from "@/components/logo";
 import { useApi } from "@/lib/api";
 import { ROLE_LABEL, useAuth, type Me, type Role } from "@/lib/auth";
@@ -205,6 +205,26 @@ function Sidebar({
   );
 }
 
+const subscribeOnline = (notify: () => void) => {
+  window.addEventListener("online", notify);
+  window.addEventListener("offline", notify);
+  return () => {
+    window.removeEventListener("online", notify);
+    window.removeEventListener("offline", notify);
+  };
+};
+
+/** "En vivo" next to the title of the screens that update by themselves; the dot only pulses while there is a connection. */
+function LiveBadge() {
+  const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
+  return (
+    <span className={`inline-flex items-center gap-[7px] text-[13.5px] font-semibold max-sm:gap-0 max-sm:text-[0px] ${online ? "text-success" : "text-muted"}`}>
+      <i aria-hidden className={`size-2 rounded-full ${online ? "bg-success motion-safe:animate-[live_2.4s_infinite]" : "bg-line-strong"}`} />
+      {online ? "En vivo" : "Sin conexión"}
+    </span>
+  );
+}
+
 /** Roles that see "Mesas" in the menu, and so its count of food ready to serve. */
 const SERVICE_ROLES: Role[] = ["OWNER", "ADMIN", "CASHIER", "WAITER"];
 
@@ -319,6 +339,7 @@ export function PanelShell({
         <header className="sticky top-0 z-30 flex h-[60px] items-center gap-2.5 border-b border-line bg-ground/85 px-4 backdrop-blur-md sm:h-[68px] sm:gap-3.5 sm:px-7">
           <LogoMark size={32} className="sm:hidden" />
           <h1 className="font-display text-[21px] font-bold tracking-[-0.02em] sm:text-[22px]">{title}</h1>
+          {(pathname === "/mesas" || pathname === "/cocina") && <LiveBadge />}
           {me.locations.length > 1 ? (
             <label className="ml-auto flex min-w-0 items-center gap-1.5 text-sm text-muted">
               <MapPin size={18} aria-hidden className="hidden shrink-0 sm:block" />

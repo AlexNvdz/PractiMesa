@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Clock, ConciergeBell, type LucideIcon, Pencil, Plus, ReceiptText, ShoppingBag, Users } from "lucide-react";
+import { ArrowLeft, Clock, ConciergeBell, LayoutGrid, type LucideIcon, Pencil, Plus, ReceiptText, ShoppingBag, Users } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
@@ -287,10 +287,12 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
       ? `${STATUS_LABEL[table.status]} · ${table.capacity} puestos`
       : "Pedido nuevo";
   const charged = charging ? orders[charging] : undefined;
+  // The account is on screen when something is picked; while composing, only after "Ver cuenta" on small screens.
+  const overlay = hasSelection && (!composing || mobilePanel);
 
   return (
-    <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-      <div className={mobilePanel ? "hidden lg:block" : ""}>
+    <div className="min-[1180px]:grid min-[1180px]:grid-cols-[minmax(0,1fr)_392px] min-[1180px]:items-start min-[1180px]:gap-6">
+      <div>
         {composing ? (
           <>
             <div className="mb-4 flex items-center gap-3">
@@ -315,7 +317,7 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
               }}
             />
             {draft.length > 0 && (
-              <div className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] mt-6 sm:bottom-4 lg:hidden">
+              <div className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] mt-6 sm:bottom-4 min-[1180px]:hidden">
                 <button type="button" onClick={() => setMobilePanel(true)} className={`${button.primary} w-full border border-transparent shadow-panel`}>
                   Ver cuenta · {draft.reduce((n, l) => n + l.quantity, 0)} por enviar ·{" "}
                   {cop(draft.reduce((sum, l) => sum + linePrice(l), 0))}
@@ -339,52 +341,68 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
         )}
       </div>
 
-      <div className={mobilePanel ? "" : "hidden lg:block"}>
+      {/* Under 1180px the account slides over the map (a bottom sheet on phones); from 1180px it sits beside it. */}
+      {overlay && <div aria-hidden onClick={() => (composing ? setMobilePanel(false) : select(null))} className="fixed inset-0 z-[35] bg-ink/30 min-[1180px]:hidden motion-safe:animate-[fade-in_.25s_ease-out]" />}
+      <aside
+        aria-label="Cuenta"
+        // Stretched to the row so the account can stay in view (sticky) while the map scrolls.
+        className={`min-[1180px]:self-stretch ${
+          overlay
+            ? "max-[1179px]:fixed max-[1179px]:inset-y-0 max-[1179px]:right-0 max-[1179px]:z-40 max-[1179px]:flex max-[1179px]:w-[min(420px,100%)] max-[1179px]:flex-col max-[1179px]:rounded-l-[20px] max-[1179px]:bg-surface max-[1179px]:shadow-panel motion-safe:max-[1179px]:animate-[slide-in_.32s_var(--ease-out)] max-sm:inset-x-0 max-sm:top-auto max-sm:h-[90dvh] max-sm:w-full max-sm:rounded-t-[22px] max-sm:rounded-l-none motion-safe:max-sm:animate-[slide-up_.32s_var(--ease-out)]"
+            : "max-[1179px]:hidden"
+        }`}
+      >
         {hasSelection ? (
-          <AccountPanel
-            title={title}
-            subtitle={subtitle}
-            order={account}
-            served={served}
-            draft={draft}
-            onDraft={setDraft}
-            canOrder={canOrder}
-            // A paid counter order only waits to be handed over; new products would start another order.
-            canAdd={canOrder && !(picked && !account)}
-            canCharge={canCharge}
-            canVoid={canOrder}
-            composing={composing}
-            busy={busy}
-            error={error}
-            onBack={() => (composing ? setMobilePanel(false) : select(null))}
-            onCompose={() => {
-              setComposing(true);
-              setMobilePanel(false);
-            }}
-            onSend={send}
-            onCharge={() => setCharging(account!.id)}
-            onVoid={voidItem}
-            onCancel={cancel}
-            onDeliver={deliver}
-            extra={
-              table && !here.length && canOrder ? (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setTableStatus(table.status === "RESERVED" ? "FREE" : "RESERVED")}
-                  className={button.ghost}
-                >
-                  {table.status === "RESERVED" ? "Quitar reserva" : "Marcar reservada"}
-                </button>
-              ) : undefined
-            }
-          />
+          <>
+            <div aria-hidden className="mx-auto mt-2 h-[5px] w-10 shrink-0 rounded-full bg-line-strong sm:hidden" />
+            <AccountPanel
+              title={title}
+              subtitle={subtitle}
+              order={account}
+              served={served}
+              draft={draft}
+              onDraft={setDraft}
+              canOrder={canOrder}
+              // A paid counter order only waits to be handed over; new products would start another order.
+              canAdd={canOrder && !(picked && !account)}
+              canCharge={canCharge}
+              canVoid={canOrder}
+              composing={composing}
+              busy={busy}
+              error={error}
+              onBack={() => (composing ? setMobilePanel(false) : select(null))}
+              onCompose={() => {
+                setComposing(true);
+                setMobilePanel(false);
+              }}
+              onSend={send}
+              onCharge={() => setCharging(account!.id)}
+              onVoid={voidItem}
+              onCancel={cancel}
+              onDeliver={deliver}
+              now={now}
+              extra={
+                table && !here.length && canOrder ? (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setTableStatus(table.status === "RESERVED" ? "FREE" : "RESERVED")}
+                    className={button.ghost}
+                  >
+                    {table.status === "RESERVED" ? "Quitar reserva" : "Marcar reservada"}
+                  </button>
+                ) : undefined
+              }
+            />
+          </>
         ) : (
-          <p className="hidden rounded-panel border border-dashed border-line-strong px-5 py-10 text-center text-[15px] text-muted lg:block">
-            Elige una mesa para ver su cuenta.
-          </p>
+          <div className="rounded-[18px] border border-line bg-surface px-7 py-12 text-center text-muted min-[1180px]:sticky min-[1180px]:top-[92px]">
+            <LayoutGrid size={56} strokeWidth={1.4} aria-hidden className="mx-auto mb-2.5 text-line-strong" />
+            <b className="mb-1 block text-base text-ink-2">Ninguna cuenta abierta aquí</b>
+            Toca una mesa del mapa para ver sus rondas y cobrar.
+          </div>
         )}
-      </div>
+      </aside>
 
       <Dialog open={charged !== undefined} onClose={() => setCharging(null)} title={charged ? `Cobrar · ${charged.dining_tables?.name ?? `Pedido #${charged.order_number}`}` : ""}>
         {charged && (
@@ -534,6 +552,7 @@ function FloorMap({
               className={`${chip} ${filter === f.id ? "border-ink bg-ink text-white" : "border-line-strong bg-surface text-ink-2 hover:border-muted"}`}
             >
               {f.id === "ready" && <span aria-hidden className="size-2 rounded-full bg-ready" />}
+              {f.id === "pickup" && <ShoppingBag size={16} aria-hidden />}
               {f.label}
               <span className="figures font-bold opacity-70">{f.n}</span>
             </button>
@@ -550,7 +569,7 @@ function FloorMap({
             onClick={onPickup}
             className={`${button.secondary} h-10 pl-3 max-[853px]:fixed max-[853px]:right-5 max-[853px]:bottom-6 max-[853px]:z-30 max-[853px]:h-[52px] max-[853px]:rounded-full max-[853px]:border-transparent max-[853px]:bg-accent max-[853px]:pr-5 max-[853px]:pl-4 max-[853px]:text-white max-[853px]:shadow-panel max-[853px]:hover:enabled:bg-accent-strong max-[853px]:hover:enabled:text-white max-sm:right-4 max-sm:bottom-[calc(84px+env(safe-area-inset-bottom))]`}
           >
-            <ShoppingBag size={18} strokeWidth={2.25} aria-hidden />
+            <Plus size={16} aria-hidden />
             Para llevar
           </button>
         )}

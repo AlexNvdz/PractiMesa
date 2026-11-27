@@ -224,6 +224,22 @@
   }
 }
 
+@keyframes live {
+  70% { box-shadow: 0 0 0 7px rgb(27 128 104 / 0); }
+  0% { box-shadow: 0 0 0 0 rgb(27 128 104 / 0.5); }
+  100% { box-shadow: 0 0 0 0 rgb(27 128 104 / 0); }
+}
+
+@keyframes slide-in {
+  from { translate: 100% 0; }
+}
+@keyframes slide-up {
+  from { translate: 0 100%; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
 @keyframes pop {
   from {
     scale: 0.3;

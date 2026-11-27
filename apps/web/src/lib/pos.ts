@@ -111,6 +111,8 @@ export interface OrderRound {
   id: string;
   round: number;
   status: RoundStatus;
+  /** When the round went to the kitchen. */
+  created_at: string;
 }
 
 export interface Order {

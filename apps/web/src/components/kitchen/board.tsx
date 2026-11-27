@@ -1,21 +1,22 @@
 "use client";
 
-import { Clock, LoaderCircle, Volume2, VolumeX } from "lucide-react";
+import { Check, Clock, LoaderCircle, Volume2, VolumeX } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNow } from "@/components/pos/service";
 import { button } from "@/components/ui";
 import { type Undo, UndoToast } from "@/components/undo-toast";
 import { errorMessage, useApi } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { elapsed } from "@/lib/format";
 import { useLive } from "@/lib/live";
 import type { KitchenRound, RoundStatus } from "@/lib/pos";
 
 // `tab` = short name for the phone selector; `count` colours the lane count like the round state.
 const LANES = [
-  { status: "PENDING", title: "Por preparar", tab: "Nuevas", empty: "Nada en cola.", action: "Empezar", next: "PREPARING", count: "border border-line-strong bg-surface text-ink-2" },
-  { status: "PREPARING", title: "En preparación", tab: "Preparando", empty: "Nada en preparación.", action: "Marcar lista", next: "READY", count: "bg-accent text-white" },
-  { status: "READY", title: "Listas para servir", tab: "Listas", empty: "Nada esperando.", action: "Entregada", next: "DELIVERED", count: "bg-ready text-ready-ink" },
-] as const satisfies { status: KitchenRound["status"]; title: string; tab: string; empty: string; action: string; next: RoundStatus; count: string }[];
+  { status: "PENDING", title: "Por preparar", tab: "Nuevas", empty: "Sin comandas aquí.", action: "Empezar", next: "PREPARING", count: "border border-line-strong bg-surface text-ink-2", tabCount: "bg-line text-ink-2" },
+  { status: "PREPARING", title: "Preparando", tab: "Preparando", empty: "Sin comandas aquí.", action: "Marcar lista", next: "READY", count: "bg-accent text-white", tabCount: "bg-accent text-white" },
+  { status: "READY", title: "Listas para servir", tab: "Listas", empty: "Nada esperando mesero.", action: "Entregada", next: "DELIVERED", count: "bg-ready text-ready-ink", tabCount: "bg-ready text-ready-ink" },
+] as const satisfies { status: KitchenRound["status"]; title: string; tab: string; empty: string; action: string; next: RoundStatus; count: string; tabCount: string }[];
 
 type Lane = (typeof LANES)[number];
 const DONE = { PREPARING: "en preparación", READY: "lista", DELIVERED: "entregada" } as const;
@@ -41,7 +42,7 @@ function chime(audio: AudioContext) {
   }
 }
 
-const where = (r: KitchenRound) => r.orders.dining_tables?.name ?? `Para llevar #${r.orders.order_number}`;
+const where = (r: KitchenRound) => r.orders.dining_tables?.name ?? `Pedido #${r.orders.order_number}`;
 
 /**
  * Kitchen screen (KDS): one ticket per round, oldest first, in three lanes. Every terminal of the location
@@ -50,6 +51,8 @@ const where = (r: KitchenRound) => r.orders.dining_tables?.name ?? `Para llevar 
 export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
   const api = useApi();
   const now = useNow();
+  const { me } = useAuth();
+  const locationName = me?.locations.find((l) => l.id === me.current_location_id)?.name ?? "la sede";
   const [rounds, setRounds] = useState<KitchenRound[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -146,16 +149,13 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
-        {readOnly && <p className="mr-auto text-sm text-muted">Solo vista: la cocina mueve las comandas.</p>}
+      <div className="mb-5 flex flex-wrap items-center gap-2.5">
+        <p className="mr-auto text-sm text-muted max-sm:basis-full">
+          {readOnly ? "Solo vista: la cocina mueve las comandas." : `Comandas de ${locationName}, la más antigua primero.`}
+        </p>
         {sound && !audible && <p className="text-sm text-muted">Toca la pantalla una vez para oír las comandas nuevas.</p>}
-        <button
-          type="button"
-          aria-pressed={sound}
-          onClick={toggleSound}
-          className={`${button.secondary} pl-3.5 aria-pressed:border-accent aria-pressed:bg-accent-soft aria-pressed:text-accent-strong`}
-        >
-          {sound ? <Volume2 size={18} strokeWidth={2.25} aria-hidden /> : <VolumeX size={18} strokeWidth={2.25} aria-hidden />}
+        <button type="button" aria-pressed={sound} onClick={toggleSound} className={`${button.secondary} pl-3.5`}>
+          {sound ? <Volume2 size={16} aria-hidden /> : <VolumeX size={16} aria-hidden />}
           Sonido de comandas
         </button>
       </div>
@@ -165,21 +165,23 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
         </p>
       )}
       {/* Phone: pick the lane; the three lanes side by side from 640px (scrolling sideways on narrow tablets). */}
-      <div role="group" aria-label="Carril" className="mb-4 grid grid-cols-3 gap-1 rounded-full bg-line/60 p-1 sm:hidden">
+      <div role="group" aria-label="Carril" className="mb-3.5 grid grid-cols-3 gap-1 rounded-[14px] bg-[#e8eae5] p-1 sm:hidden">
         {LANES.map((lane) => (
           <button
             key={lane.status}
             type="button"
             aria-pressed={shown === lane.status}
             onClick={() => setShown(lane.status)}
-            className="flex h-10 items-center justify-center gap-1.5 rounded-full text-sm font-semibold text-ink-2 transition-[background-color,color] duration-150 aria-pressed:bg-surface aria-pressed:text-ink aria-pressed:shadow-sm"
+            className="flex h-11 items-center justify-center gap-1.5 rounded-control text-[13.5px] font-[650] text-ink-2 transition-[background-color,color] duration-150 aria-pressed:bg-surface aria-pressed:text-ink aria-pressed:shadow-[0_1px_2px_rgb(23_30_46/0.1)]"
           >
             {lane.tab}
-            <span className="figures text-muted">{rounds.filter((r) => r.status === lane.status).length}</span>
+            <span className={`figures grid h-5 min-w-[22px] place-items-center rounded-full px-1.5 text-xs ${lane.tabCount}`}>
+              {rounds.filter((r) => r.status === lane.status).length}
+            </span>
           </button>
         ))}
       </div>
-      <div className="sm:grid sm:snap-x sm:snap-mandatory sm:grid-cols-[repeat(3,minmax(260px,1fr))] sm:gap-4 sm:overflow-x-auto sm:pb-2 lg:gap-5">
+      <div className="sm:grid sm:snap-x sm:snap-mandatory sm:grid-cols-[repeat(3,minmax(280px,1fr))] sm:gap-[18px] sm:overflow-x-auto sm:pb-2">
         {LANES.map((lane) => {
           const tickets = rounds.filter((r) => r.status === lane.status);
           return (
@@ -189,7 +191,7 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
                 <span className={`figures grid h-6 min-w-[26px] place-items-center rounded-full px-2 font-sans text-[13px] font-bold ${lane.count}`}>{tickets.length}</span>
               </h2>
               {tickets.length ? (
-                <ul className="space-y-3">
+                <ul className="grid gap-3">
                   {tickets.map((r) => (
                     <li key={r.id}>
                       <Ticket round={r} lane={lane} now={now} busy={busy === r.id} onAdvance={readOnly ? undefined : () => void advance(r, lane.next)} />
@@ -216,35 +218,35 @@ function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; la
       aria-label={`${where(round)}, ronda ${round.round}${late ? ", atrasada" : ""}`}
       className={`enter overflow-hidden rounded-panel border-[1.5px] bg-surface ${late ? "border-danger" : "border-line"}`}
     >
-      <header className={`border-b px-4 pt-3 pb-2.5 ${late ? "border-danger/20 bg-danger-soft" : "border-line"}`}>
-        <h3 className="font-display text-[21px] font-[750] tracking-[-0.02em] text-balance">{where(round)}</h3>
-        <div className="figures mt-0.5 flex items-center justify-between gap-3">
-          <p className="text-[13.5px] text-muted">Ronda {round.round}</p>
-          <p className={`flex items-center gap-1.5 text-[15px] whitespace-nowrap ${late ? "font-extrabold text-danger" : "font-semibold text-ink-2"}`}>
-            <Clock size={18} strokeWidth={late ? 2.5 : 2.25} aria-hidden />
-            {late ? "Atrasada · " : <span className="sr-only">Enviada hace </span>}
-            {elapsed(round.created_at, now)}
-          </p>
+      <header className={`flex items-start gap-2.5 border-b px-4 pt-3 pb-2.5 ${late ? "border-danger/20 bg-danger-soft" : "border-line"}`}>
+        <div className="min-w-0">
+          <h3 className="font-display text-[21px] font-[750] tracking-[-0.02em] text-balance">{where(round)}</h3>
+          <p className="mt-px text-[13.5px] text-muted">Ronda {round.round}{round.orders.order_type === "PICKUP" && " · para llevar"}</p>
         </div>
+        <p className={`figures ml-auto inline-flex items-center gap-[5px] text-[15px] whitespace-nowrap ${late ? "font-extrabold text-danger" : "font-semibold text-ink-2"}`}>
+          <Clock size={16} aria-hidden />
+          {late ? "Atrasada · " : <span className="sr-only">Enviada hace </span>}
+          {elapsed(round.created_at, now)}
+        </p>
       </header>
-      <ul className="space-y-3 px-4 py-4">
+      <ul className="grid gap-2 px-4 py-3">
         {round.order_items.map((item) =>
           item.voided_at ? (
             // Voided after it was sent (Q62): crossed out so nobody cooks it; the API lists these last.
-            <li key={item.id} className="flex items-start gap-3 text-muted">
-              <span className="figures w-8 shrink-0 text-lg font-semibold line-through">{item.quantity}×</span>
-              <p className="min-w-0 flex-1 text-lg leading-snug">
+            <li key={item.id} className="grid grid-cols-[34px_1fr] text-[17px] leading-[1.3] text-muted">
+              <span className="figures font-extrabold">{item.quantity}</span>
+              <p className="min-w-0">
                 <span className="line-through">{item.products.name}</span>
-                <span className="ml-2 inline-block -rotate-3 rounded-md border-2 border-danger px-1.5 align-middle text-xs font-extrabold tracking-[0.06em] text-danger">ANULADA</span>
+                <span className="ml-1.5 inline-block -rotate-4 rounded-[4px] border-[1.5px] border-danger px-[5px] text-[11px] font-extrabold tracking-[0.04em] text-danger">ANULADA</span>
               </p>
             </li>
           ) : (
-            <li key={item.id} className="flex items-start gap-3">
-              <span className="figures w-8 shrink-0 text-lg font-extrabold">{item.quantity}×</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-lg leading-snug font-medium">{item.products.name}</p>
+            <li key={item.id} className="grid grid-cols-[34px_1fr] text-[17px] leading-[1.3]">
+              <span className="figures font-extrabold">{item.quantity}</span>
+              <div className="min-w-0">
+                <p>{item.products.name}</p>
                 {item.selected_modifiers.length > 0 && (
-                  <p className="text-[15px] text-ink-2">{item.selected_modifiers.map((m) => m.option).join(" · ")}</p>
+                  <p className="text-sm text-muted">{item.selected_modifiers.map((m) => m.option).join(" · ")}</p>
                 )}
                 {item.notes && <p className="mt-1 rounded-control bg-warning-soft px-2 py-1 text-[15px] font-medium text-warning">{item.notes}</p>}
               </div>
@@ -253,16 +255,19 @@ function Ticket({ round, lane, now, busy, onAdvance }: { round: KitchenRound; la
         )}
       </ul>
       {onAdvance && (
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-3.5">
           <button
             type="button"
             disabled={busy}
             onClick={onAdvance}
-            // Bigger than the 44px default: tapped with wet hands, read from across the kitchen. Slate for
-            // "Marcar lista", the step the floor waits for; yellow only for handing food over (One Yellow Rule).
-            className={`${lane.status === "PREPARING" ? button.primary : lane.status === "READY" ? button.ready : button.secondary} h-14! w-full text-lg!`}
+            // As in the prototype: "Empezar" and "Entregada" are plain, "Marcar lista" is the yellow step.
+            className={`${lane.status === "PREPARING" ? button.ready : button.secondary} w-full`}
           >
-            {busy && <LoaderCircle size={20} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
+            {busy ? (
+              <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />
+            ) : (
+              lane.status === "READY" && <Check size={16} aria-hidden />
+            )}
             {lane.action}
           </button>
         </div>

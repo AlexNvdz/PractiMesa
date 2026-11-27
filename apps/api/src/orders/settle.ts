@@ -9,7 +9,7 @@ export const ORDER_INCLUDE = {
       voider: { select: { full_name: true } },
     },
   },
-  order_rounds: { orderBy: { round: 'asc' }, select: { id: true, round: true, status: true } },
+  order_rounds: { orderBy: { round: 'asc' }, select: { id: true, round: true, status: true, created_at: true } },
   dining_tables: { select: { name: true } },
 } satisfies Prisma.ordersInclude;
 
