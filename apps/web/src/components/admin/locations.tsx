@@ -17,6 +17,8 @@ interface Location {
 }
 
 const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
+const band =
+  "inline-flex h-9 items-center rounded-control bg-white/70 px-3 text-[13.5px] font-semibold text-ink-2 transition-[background-color] duration-150 hover:bg-white";
 
 /**
  * Locations of the organization (OWNER): create within the plan limit, edit, deactivate, delete one without
@@ -27,13 +29,17 @@ export function Locations({ me }: { me: Me }) {
   const { reloadMe, setLocation } = useAuth();
   const [locations, setLocations] = useState<Location[] | null>(null);
   const [editing, setEditing] = useState<Location | "new" | null>(null);
+  const [stats, setStats] = useState<Record<string, { tables: number; people: number; devices: number }>>({});
   const [error, setError] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const limit = me.organization.plan_tier === "SINGLE" ? 1 : me.organization.max_locations;
 
   useEffect(() => {
     void (async () => {
       try {
-        setLocations(await api<Location[]>("/locations"));
+        const [list, counts] = await Promise.all([api<Location[]>("/locations"), api<typeof stats>("/locations/stats")]);
+        setLocations(list);
+        setStats(counts);
       } catch (err) {
         setError(errorMessage(err));
       }
@@ -52,12 +58,24 @@ export function Locations({ me }: { me: Me }) {
     );
   }
 
+  // Activate or deactivate from the card; the API refuses to leave no active location (409).
+  const toggle = async (l: Location) => {
+    setRowError(null);
+    try {
+      const saved = await api<Location>(`/locations/${l.id}`, "PATCH", { is_active: !l.is_active });
+      changed(locations.map((x) => (x.id === saved.id ? saved : x)));
+    } catch (err) {
+      setRowError({ id: l.id, message: errorMessage(err) });
+    }
+  };
+
   const full = locations.length >= limit;
   const location = editing === "new" ? undefined : (editing ?? undefined);
   // The header picker and the request location come from the session: refresh it after any change.
   const changed = (next: Location[]) => {
     setLocations(next);
     setEditing(null);
+    void api<typeof stats>("/locations/stats").then(setStats, () => undefined);
     // Working on a location that is now inactive or gone would be refused: move to an active one first.
     const active = next.filter((l) => l.is_active);
     if (active[0] && !active.some((l) => l.id === me.current_location_id)) setLocation(active[0].id);
@@ -92,28 +110,46 @@ export function Locations({ me }: { me: Me }) {
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
         {locations.map((l) => (
           <li key={l.id}>
-            <button
-              type="button"
-              onClick={() => setEditing(l)}
-              className="flex h-full min-h-40 w-full flex-col overflow-hidden pm-card text-left transition-shadow duration-150 hover:shadow-[0_0_0_1px_rgb(23_30_46/0.2),0_1px_2px_rgb(23_30_46/0.04)]"
-            >
-              <span className="flex-1 px-4 pt-4 pb-3">
-                <span className={`block font-display text-xl font-bold tracking-[-0.02em] ${l.is_active ? "" : "text-muted"}`}>{l.name}</span>
-                <span className="mt-1 block text-sm text-muted">
+            <article className="pm-card flex h-full min-h-[230px] flex-col overflow-hidden">
+              <div className="flex-1 px-5 pt-5 pb-3.5">
+                <h3 className={`font-display text-2xl font-[750] tracking-[-0.02em] ${l.is_active ? "" : "text-muted"}`}>{l.name}</h3>
+                <address className="mt-1 text-sm text-muted not-italic">
                   {l.address} · {l.city}
-                </span>
-                {l.phone_whatsapp && <span className="figures mt-0.5 block text-sm text-muted">WhatsApp {l.phone_whatsapp}</span>}
-              </span>
-              {/* Base band, like the tables: the state in words. */}
-              <span className={`flex h-9 shrink-0 items-center gap-2 px-4 text-[13.5px] font-bold ${l.is_active ? "bg-success-soft text-success" : "bg-ground text-muted"}`}>
+                </address>
+                {l.phone_whatsapp && <p className="figures mt-0.5 text-sm text-muted">WhatsApp {l.phone_whatsapp}</p>}
+                <dl className="mt-4 grid grid-cols-3 gap-2">
+                  {[
+                    ["mesas", stats[l.id]?.tables],
+                    ["personas", stats[l.id]?.people],
+                    ["dispositivos", stats[l.id]?.devices],
+                  ].map(([label, n]) => (
+                    <div key={label} className="rounded-xl bg-ground px-3 py-2.5">
+                      <dd className={`figures font-display text-[22px] font-bold ${l.is_active ? "" : "text-muted"}`}>{n ?? "–"}</dd>
+                      <dt className="text-[12.5px] text-muted">{label}</dt>
+                    </div>
+                  ))}
+                </dl>
+                {rowError?.id === l.id && (
+                  <p role="alert" className="mt-3 text-sm text-danger">
+                    {rowError.message}
+                  </p>
+                )}
+              </div>
+              {/* Base band, like the tables: the state in words, with the actions at its end. */}
+              <div className={`flex h-[52px] shrink-0 items-center gap-2 pr-3 pl-5 text-sm font-bold ${l.is_active ? "bg-success-soft text-success" : "bg-[#eceee9] text-ink-2"}`}>
                 {l.is_active ? <Check size={16} strokeWidth={2.5} aria-hidden /> : <Power size={16} strokeWidth={2.5} aria-hidden />}
                 {l.is_active ? "Activa" : "Inactiva"}
-                <span className="ml-auto flex items-center gap-1 font-semibold">
-                  <Pencil size={14} aria-hidden />
-                  Editar
+                <span className="ml-auto flex gap-1">
+                  <button type="button" onClick={() => setEditing(l)} className={`${band} gap-1.5`}>
+                    <Pencil size={14} aria-hidden />
+                    Editar
+                  </button>
+                  <button type="button" onClick={() => void toggle(l)} className={band}>
+                    {l.is_active ? "Desactivar" : "Activar"}
+                  </button>
                 </span>
-              </span>
-            </button>
+              </div>
+            </article>
           </li>
         ))}
         <li>
@@ -121,7 +157,7 @@ export function Locations({ me }: { me: Me }) {
             type="button"
             disabled={full}
             onClick={() => setEditing("new")}
-            className="flex h-full min-h-40 w-full flex-col items-center justify-center gap-1.5 rounded-panel border-[1.5px] border-dashed border-line-strong px-6 text-center font-semibold text-ink-2 transition-[border-color,background-color] duration-150 hover:enabled:border-muted hover:enabled:bg-surface disabled:cursor-not-allowed disabled:text-muted"
+            className="flex h-full min-h-[230px] w-full flex-col items-center justify-center gap-1.5 rounded-panel border-[1.5px] border-dashed border-line-strong px-6 text-center font-semibold text-ink-2 transition-[border-color,background-color] duration-150 hover:enabled:border-muted hover:enabled:bg-surface disabled:cursor-not-allowed disabled:text-muted"
           >
             {full ? <Lock size={22} aria-hidden /> : <Plus size={22} aria-hidden />}
             {full ? "Llegaste al tope de tu plan" : "Agregar sede"}

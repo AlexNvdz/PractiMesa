@@ -4,6 +4,7 @@ import { Check, ChevronDown, ChevronUp, Plus, Search, Tags, Trash2 } from "lucid
 import { useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { Sentinel } from "@/components/sentinel";
+import { type Undo, UndoToast } from "@/components/undo-toast";
 import { button, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import type { Me } from "@/lib/auth";
@@ -30,6 +31,7 @@ export function Catalog({ me }: { me: Me }) {
   const [managing, setManaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [undo, setUndo] = useState<Undo | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   const owner = me.user.role === "OWNER";
   const locationName = me.locations.find((l) => l.id === me.current_location_id)?.name ?? "esta sede";
@@ -91,17 +93,32 @@ export function Catalog({ me }: { me: Me }) {
     .filter((g) => g.items.length);
   const more = cap < total ? () => setPaging({ key: windowKey, count: cap + 24 }) : undefined;
 
-  const toggleSoldOut = async (p: Product) => {
-    const available = local[p.id]?.is_available !== false;
+  const setAvailable = async (p: Product, available: boolean) => {
     setToggling(p.id);
     setRowError(null);
     try {
-      const saved = await api<LocationProduct>(`/location-products/${p.id}`, "PUT", { is_available: !available });
+      const saved = await api<LocationProduct>(`/location-products/${p.id}`, "PUT", { is_available: available });
       setLocal((all) => ({ ...all, [p.id]: saved }));
+      return true;
     } catch (err) {
       setRowError({ id: p.id, message: errorMessage(err) });
+      return false;
+    } finally {
+      setToggling(null);
     }
-    setToggling(null);
+  };
+
+  // "Disponible hoy" switch: applies at once and can be undone for a few seconds.
+  const toggleSoldOut = async (p: Product) => {
+    const available = local[p.id]?.is_available !== false;
+    if (await setAvailable(p, !available)) {
+      setUndo({
+        message: `${p.name} · ${available ? "agotado hoy" : "disponible hoy"}`,
+        run: async () => {
+          await setAvailable(p, available);
+        },
+      });
+    }
   };
 
   return (
@@ -206,37 +223,43 @@ export function Catalog({ me }: { me: Me }) {
                         )}
                       </>
                     );
-                    const card = "flex h-full w-full flex-col gap-2.5 pm-card p-4 text-left";
+                    const card = "pm-card flex h-full w-full flex-col";
                     return (
                       // Cards far off screen skip layout and paint until scrolled near: long menus stay fast.
                       <li key={p.id} className="[contain-intrinsic-size:auto_170px] [content-visibility:auto]">
-                        {owner ? (
-                          <button type="button" onClick={() => setEditing(p)} className={`${card} transition-shadow duration-150 hover:shadow-[0_0_0_1px_rgb(23_30_46/0.2),0_1px_2px_rgb(23_30_46/0.04)]`}>
-                            {body}
-                          </button>
-                        ) : (
-                          <div className={card}>
-                            {body}
-                            {sellable && (
-                              <div className="mt-auto border-t border-dashed border-line-strong pt-2.5">
-                                <button
-                                  type="button"
-                                  disabled={toggling === p.id}
-                                  onClick={() => void toggleSoldOut(p)}
-                                  aria-pressed={soldOut}
-                                  className={`${button.secondary} h-10 w-full`}
-                                >
-                                  {soldOut ? "Marcar disponible" : "Marcar agotado"}
-                                </button>
-                              </div>
-                            )}
-                            {rowError?.id === p.id && (
-                              <p role="alert" className="text-sm text-danger">
-                                {rowError.message}
-                              </p>
-                            )}
-                          </div>
-                        )}
+                        <div className={`${card}`}>
+                          {owner ? (
+                            <button
+                              type="button"
+                              onClick={() => setEditing(p)}
+                              className="flex w-full flex-1 flex-col gap-2.5 rounded-t-2xl p-4 text-left transition-[background-color] duration-150 hover:bg-[#f7f8f5]"
+                            >
+                              {body}
+                            </button>
+                          ) : (
+                            <div className="flex w-full flex-1 flex-col gap-2.5 p-4">{body}</div>
+                          )}
+                          {sellable && (
+                            <div className="mx-4 mb-3 flex items-center justify-between gap-2 border-t border-dashed border-line-strong pt-2.5">
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={!soldOut}
+                                disabled={toggling === p.id}
+                                onClick={() => void toggleSoldOut(p)}
+                                className="group inline-flex items-center gap-2 py-1 text-[13.5px] font-semibold text-ink-2 disabled:opacity-60"
+                              >
+                                <i className="relative h-6 w-10 shrink-0 rounded-xl bg-line-strong transition-[background-color] duration-200 group-aria-checked:bg-success after:absolute after:top-[3px] after:left-[3px] after:size-[18px] after:rounded-full after:bg-white after:shadow-[0_1px_2px_rgb(23_30_46/0.25)] after:transition-[translate] after:duration-200 after:ease-[cubic-bezier(0.2,0,0,1)] group-aria-checked:after:translate-x-4" />
+                                Disponible hoy
+                              </button>
+                            </div>
+                          )}
+                          {rowError?.id === p.id && (
+                            <p role="alert" className="px-4 pb-3 text-sm text-danger">
+                              {rowError.message}
+                            </p>
+                          )}
+                        </div>
                       </li>
                     );
                   })}
@@ -247,6 +270,8 @@ export function Catalog({ me }: { me: Me }) {
           </div>
         </div>
       )}
+
+      <UndoToast undo={undo} onClose={() => setUndo(null)} />
 
       <Dialog open={editing !== null} onClose={() => setEditing(null)} title={product ? product.name : "Nuevo producto"} wide>
         <ProductForm

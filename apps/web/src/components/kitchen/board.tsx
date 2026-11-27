@@ -186,7 +186,7 @@ export function KitchenBoard({ readOnly = false }: { readOnly?: boolean }) {
           const tickets = rounds.filter((r) => r.status === lane.status);
           return (
             <section key={lane.status} aria-labelledby={`lane-${lane.status}`} className={`min-w-0 snap-start ${shown === lane.status ? "" : "max-sm:hidden"}`}>
-              <h2 id={`lane-${lane.status}`} className="mb-3 flex items-center gap-2.5 font-display text-[17px] font-bold tracking-[-0.01em]">
+              <h2 id={`lane-${lane.status}`} className="mb-3 flex items-center gap-2.5 max-sm:hidden font-display text-[17px] font-bold tracking-[-0.01em]">
                 {lane.title}
                 <span className={`figures grid h-6 min-w-[26px] place-items-center rounded-full px-2 font-sans text-[13px] font-bold ${lane.count}`}>{tickets.length}</span>
               </h2>

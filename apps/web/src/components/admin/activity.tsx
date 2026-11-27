@@ -190,14 +190,16 @@ export function Activity({ me }: { me: Me }) {
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-muted">
-          Desde
-          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={`${field} figures h-10 w-auto`} />
-        </label>
-        <label className="flex items-center gap-1.5 text-sm text-muted">
-          Hasta
-          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={`${field} figures h-10 w-auto`} />
-        </label>
+        <div className="flex w-full gap-2 sm:w-auto">
+          <label className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted">
+            Desde
+            <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={`${field} figures h-10 min-w-0 flex-1 px-2.5 sm:w-auto`} />
+          </label>
+          <label className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted">
+            Hasta
+            <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={`${field} figures h-10 min-w-0 flex-1 px-2.5 sm:w-auto`} />
+          </label>
+        </div>
       </div>
 
       {error && <FormAlert>{error}</FormAlert>}
