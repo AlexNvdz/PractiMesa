@@ -1,16 +1,17 @@
 "use client";
 
-import { LoaderCircle, Plus, Search } from "lucide-react";
+import { ListChecks, LoaderCircle, PackagePlus, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { type ActivityEntry, ActivityLine } from "@/components/admin/activity";
+import { RowSkeleton } from "@/components/skeleton";
+import type { ActivityEntry } from "@/components/admin/activity";
 import { Dialog } from "@/components/dialog";
 import { FormAlert } from "@/components/form-alert";
 import { Sentinel } from "@/components/sentinel";
-import { button, choice, field, seg, segItem } from "@/components/ui";
+import { button, field, seg, segItem } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import { useDebounced, usePagedList } from "@/lib/paged";
 import type { Me } from "@/lib/auth";
-import { fold, qty } from "@/lib/format";
+import { fold, qty, time } from "@/lib/format";
 import type { Ingredient, LocationStock } from "@/lib/pos";
 
 /** Common units, offered as suggestions; the field stays free text. */
@@ -91,21 +92,28 @@ function StockRows({
               <button
                 type="button"
                 onClick={() => onOpen(g)}
-                className="grid min-h-16 w-full grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 px-5 py-3 text-left transition-[background-color] duration-150 hover:bg-ground max-sm:grid-cols-[minmax(0,1fr)_auto]"
+                className="grid min-h-16 w-full grid-cols-[minmax(0,1.5fr)_minmax(140px,1fr)_128px_132px] items-center gap-4 px-3.5 py-3 text-left transition-[background-color] duration-150 hover:bg-ground sm:px-[18px] max-[899px]:grid-cols-[minmax(0,1fr)_112px]"
               >
-                <span className="min-w-0 truncate text-[15px] font-semibold">
-                  {g.name}
-                  {state === "out" && <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 align-middle text-xs font-semibold text-danger">Sin stock</span>}
-                  {state === "low" && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 align-middle text-xs font-semibold text-warning">Bajo el mínimo</span>}
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px] font-[650]">{g.name}</span>
+                  {g.category && <span className="block truncate text-[13px] font-medium text-muted">{g.category}</span>}
                 </span>
-                <span className="max-sm:order-last max-sm:col-span-2">
+                <span className="max-[899px]:order-last max-[899px]:col-span-full">
                   <StockMeter stock={here} unit={g.unit} />
                 </span>
-                <span className="text-right">
-                  <span className={`figures block text-[15px] font-bold ${state === "out" ? "text-danger" : ""}`}>
+                <span className="figures text-right font-bold">
+                  <span className={`block ${state === "out" ? "text-danger" : ""}`}>
                     {qty(g.current_qty)} {g.unit}
                   </span>
-                  <span className="figures block text-xs text-muted">{min > 0 ? `Mínimo ${qty(min)} ${g.unit}` : "Sin mínimo"}</span>
+                  <small className="block text-[12.5px] font-medium text-muted">{min > 0 ? `mín ${qty(min)} ${g.unit}` : "Sin mínimo"}</small>
+                </span>
+                {/* Under 900px the tag leaves the row but stays for screen readers (the bar and the figures say the rest). */}
+                <span
+                  className={`inline-flex h-6 items-center justify-self-end rounded-full px-[9px] text-[12.5px] font-bold whitespace-nowrap max-[899px]:sr-only ${
+                    state === "out" ? "bg-danger-soft text-danger" : state === "low" ? "bg-warning-soft text-warning" : "bg-success-soft text-success"
+                  }`}
+                >
+                  {state === "out" ? "Sin stock" : state === "low" ? "Bajo el mínimo" : "Bien"}
                 </span>
               </button>
             </li>
@@ -141,9 +149,7 @@ export function Inventory({ me }: { me: Me }) {
         {list.error}
       </p>
     ) : (
-      <p role="status" className="py-10 text-center text-[15px] text-muted">
-        Cargando inventario…
-      </p>
+      <RowSkeleton label="Cargando inventario…" />
     );
   }
 
@@ -154,9 +160,9 @@ export function Inventory({ me }: { me: Me }) {
     <div>
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <label className="relative min-w-56 flex-1 sm:max-w-sm">
-          <span className="sr-only">Buscar ingrediente</span>
+          <span className="sr-only">Buscar ingrediente o grupo</span>
           <Search size={18} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" aria-hidden />
-          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar ingrediente" className={`${field} pl-10`} />
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar ingrediente o grupo" className={`${field} pl-10`} />
         </label>
         <fieldset className={`${seg} max-sm:order-3 max-sm:w-full`}>
           <legend className="sr-only">Mostrar</legend>
@@ -222,7 +228,7 @@ export function Inventory({ me }: { me: Me }) {
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={item ? item.name : "Nuevo ingrediente"}
-        subtitle={item ? `Inventario en ${locationName}` : undefined}
+        subtitle={item ? `${item.category ? `${item.category} · ` : ""}${locationName}` : undefined}
         side
       >
         <IngredientForm
@@ -233,6 +239,7 @@ export function Inventory({ me }: { me: Me }) {
           stock={item ? stockOf(item) : undefined}
           // Names on screen only: the server has the last word on a repeated name (409).
           taken={items.filter((g) => g.id !== item?.id).map((g) => g.name)}
+          groups={[...new Set(items.flatMap((g) => (g.category ? [g.category] : [])))].sort((a, b) => a.localeCompare(b, "es"))}
           locationName={locationName}
           onSaved={() => {
             setEditing(null);
@@ -242,6 +249,7 @@ export function Inventory({ me }: { me: Me }) {
             setEditing(null);
             list.reload();
           }}
+          onCancel={() => setEditing(null)}
         />
       </Dialog>
     </div>
@@ -258,18 +266,22 @@ function IngredientForm({
   canSeeLog,
   stock,
   taken,
+  groups,
   locationName,
   onSaved,
   onDeleted,
+  onCancel,
 }: {
   ingredient?: Ingredient;
   canManage: boolean;
   canSeeLog: boolean;
   stock?: LocationStock;
   taken: string[];
+  groups: string[];
   locationName: string;
   onSaved: (ingredient: Ingredient, stock?: LocationStock) => void;
   onDeleted: (id: string) => void;
+  onCancel: () => void;
 }) {
   const api = useApi();
   const now = Number(stock?.current_qty ?? 0);
@@ -277,6 +289,7 @@ function IngredientForm({
   const initialMin = Number(stock?.min_alert_qty ?? 0) ? String(Number(stock!.min_alert_qty)) : "";
   const [name, setName] = useState(ingredient?.name ?? "");
   const [unit, setUnit] = useState(ingredient?.unit ?? "");
+  const [group, setGroup] = useState(ingredient?.category ?? "");
   const [mode, setMode] = useState<"receive" | "count">("receive");
   const [received, setReceived] = useState("");
   const [current, setCurrent] = useState(initialCurrent);
@@ -284,6 +297,7 @@ function IngredientForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [dataOpen, setDataOpen] = useState(false);
   // A step that already saved is not repeated on retry: no duplicate ingredient, no goods added twice.
   const created = useRef<string | null>(null);
   const receivedDone = useRef<LocationStock | null>(null);
@@ -295,11 +309,16 @@ function IngredientForm({
     api<ActivityEntry[]>(`/activity?ingredient=${ingredient.id}&limit=5`).then(setMoves, () => undefined);
   }, [api, canSeeLog, ingredient]);
 
+  const openData = (message: string) => {
+    setDataOpen(true);
+    return message;
+  };
+
   const problem = () => {
     if (canManage) {
-      if (!name.trim()) return "Escribe el nombre del ingrediente.";
-      if (taken.some((t) => same(t, name))) return `Ya existe un ingrediente llamado "${name.trim()}".`;
-      if (!shownUnit) return "Escribe la unidad en que lo mides (gr, ml, und…).";
+      if (!name.trim()) return openData("Escribe el nombre del ingrediente.");
+      if (taken.some((t) => same(t, name))) return openData(`Ya existe un ingrediente llamado "${name.trim()}".`);
+      if (!shownUnit) return openData("Escribe la unidad en que lo mides (gr, ml, und…).");
     }
     if (mode === "receive" && received.trim() && !(decimal(received) > 0)) return "Escribe cuánto llegó, por ejemplo 5000 o 2,5.";
     if (mode === "count" && !Number.isFinite(decimal(current))) return "Escribe el stock contado como un número, por ejemplo 1500 o 2,5.";
@@ -314,7 +333,7 @@ function IngredientForm({
     setBusy(true);
     setError(null);
     try {
-      const body = { name: name.trim(), unit: shownUnit };
+      const body = { name: name.trim(), unit: shownUnit, category: group.trim() || null };
       const id = ingredient?.id ?? created.current;
       let saved = ingredient!;
       if (canManage) saved = id ? await api<Ingredient>(`/ingredients/${id}`, "PATCH", body) : await api<Ingredient>("/ingredients", "POST", body);
@@ -333,6 +352,7 @@ function IngredientForm({
       onSaved(saved, here);
     } catch (err) {
       setError(errorMessage(err));
+      setDataOpen(true);
       setBusy(false);
     }
   };
@@ -350,147 +370,227 @@ function IngredientForm({
     }
   };
 
-  const quantity = (value: string, onChange: (value: string) => void, describedBy: string) => (
+  const quantity = (value: string, onChange: (value: string) => void, id: string, describedBy: string) => (
     <span className="relative block">
       <input
+        id={id}
         inputMode="decimal"
+        autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="0"
         aria-describedby={describedBy}
-        className={`${field} figures ${shownUnit ? "pr-14" : ""}`}
+        className={`${field} figures text-lg font-[650] ${shownUnit ? "pr-14" : ""}`}
       />
-      {shownUnit && <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted">{shownUnit}</span>}
+      {shownUnit && <span className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center font-semibold text-muted">{shownUnit}</span>}
     </span>
   );
 
-  return (
-    <form onSubmit={save} noValidate className="space-y-5">
-      {canManage ? (
-        <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
-          <label className="block">
-            <span className={labelClass}>Nombre</span>
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required placeholder="Leche entera" className={field} />
-          </label>
-          <label className="block">
-            <span className={labelClass}>Unidad</span>
-            <input value={unit} onChange={(e) => setUnit(e.target.value)} maxLength={20} required list="units" placeholder="ml" className={field} />
-            <datalist id="units">
-              {UNITS.map((u) => (
-                <option key={u} value={u} />
-              ))}
-            </datalist>
-          </label>
-          <p className="-mt-2 text-sm text-muted sm:col-span-2">Las recetas y el stock usan esta unidad.</p>
-        </div>
-      ) : (
-        <div className="-mt-3 space-y-2">
-          <StockMeter stock={stock} unit={shownUnit} big />
-          <p className="text-[15px] text-ink-2">
-            Hay{" "}
-            <span className="figures font-semibold text-ink">
-              {qty(now)} {shownUnit}
-            </span>{" "}
-            en {locationName}.
-          </p>
-        </div>
-      )}
+  const minNow = Number(stock?.min_alert_qty ?? 0);
+  const typed = mode === "receive" ? decimal(received) : decimal(current);
+  const edited = mode === "receive" ? received.trim() !== "" && typed > 0 : current !== initialCurrent && Number.isFinite(typed);
+  const hint =
+    edited && ingredient ? (
+      <>
+        Queda en{" "}
+        <b className="text-ink">
+          {qty(mode === "receive" ? now + typed : typed)} {shownUnit}
+        </b>{" "}
+        (antes {qty(now)} {shownUnit}).
+      </>
+    ) : mode === "receive" ? (
+      "Se suma a lo que hay. Si guardas dos veces, se suma dos veces."
+    ) : (
+      "Escribe lo que contaste: reemplaza el número actual."
+    );
 
-      <section aria-label={`Stock en ${locationName}`} className={canManage ? "border-t border-line pt-5" : ""}>
-        {canManage && (
-          <>
-            <h3 className="font-display text-[17px] font-semibold tracking-[-0.01em]">En {locationName}</h3>
-            <p className="mt-0.5 mb-3 text-sm text-muted">Cada venta pagada descuenta la receta. Si se vende más de lo contado, el stock queda en negativo y la venta sigue.</p>
-          </>
+  // Name, unit and group belong to the whole business, so only the owner edits them. A new ingredient asks for them first.
+  const data = canManage && (
+    <>
+      <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+        <label className="block">
+          <span className={labelClass}>Nombre</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} required placeholder="Leche entera" className={field} />
+        </label>
+        <label className="block">
+          <span className={labelClass}>Unidad</span>
+          <input value={unit} onChange={(e) => setUnit(e.target.value)} maxLength={20} required list="units" placeholder="ml" className={field} />
+          <datalist id="units">
+            {UNITS.map((u) => (
+              <option key={u} value={u} />
+            ))}
+          </datalist>
+        </label>
+        <label className="block sm:col-span-2">
+          <span className={labelClass}>
+            Grupo <span className="font-normal text-muted">(opcional)</span>
+          </span>
+          <input value={group} onChange={(e) => setGroup(e.target.value)} maxLength={40} list="groups" placeholder="Lácteos" className={field} />
+          <datalist id="groups">
+            {groups.map((g) => (
+              <option key={g} value={g} />
+            ))}
+          </datalist>
+        </label>
+        <p className="-mt-1 text-sm text-muted sm:col-span-2">Las recetas y el stock usan esta unidad. El grupo se muestra bajo el nombre y se puede buscar.</p>
+      </div>
+      {ingredient &&
+        (confirmDelete ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-full text-sm text-ink-2">Se quita de todas las recetas y del stock de todas las sedes.</span>
+            <button type="button" disabled={busy} onClick={() => void remove()} className={button.danger}>
+              Eliminar {ingredient.name}
+            </button>
+            <button type="button" onClick={() => setConfirmDelete(false)} className={button.ghost}>
+              No
+            </button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setConfirmDelete(true)} className={`${button.quietDanger} -ml-3 justify-self-start`}>
+            Eliminar ingrediente
+          </button>
+        ))}
+    </>
+  );
+
+  return (
+    <form id="ingredient-form" onSubmit={save} noValidate className="flex min-h-0 flex-1 flex-col">
+      <div className="grid flex-1 content-start gap-5 overflow-y-auto overscroll-contain px-6 py-5">
+        {!ingredient && data}
+
+        {ingredient && (
+          <div>
+            <StockMeter stock={stock} unit={shownUnit} big />
+            <div className="figures mt-2 flex items-baseline justify-between gap-3 text-[13.5px] text-muted">
+              <span>
+                <b className="font-display text-[22px] font-bold text-ink">{qty(now)}</b> {shownUnit} en stock
+              </span>
+              <span>{minNow > 0 ? `Mínimo ${qty(minNow)} ${shownUnit}` : "Sin mínimo"}</span>
+            </div>
+          </div>
         )}
-        <fieldset className="grid grid-cols-2 gap-2">
-          <legend className="sr-only">Qué vas a hacer</legend>
+
+        <fieldset className={`${seg} w-full`}>
+          <legend className="sr-only">Tipo de ajuste</legend>
           {(
             [
-              ["receive", "Recibir mercancía"],
-              ["count", "Conteo"],
+              ["receive", "Recibir mercancía", PackagePlus],
+              ["count", "Conteo", ListChecks],
             ] as const
-          ).map(([value, label]) => (
-            <label key={value} className={choice}>
+          ).map(([value, label, Icon]) => (
+            <label key={value} className={`${segItem} flex-1`}>
               <input type="radio" name="mode" checked={mode === value} onChange={() => setMode(value)} className="sr-only" />
+              <Icon size={16} aria-hidden />
               {label}
             </label>
           ))}
         </fieldset>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+
+        <div>
           {mode === "receive" ? (
-            <label className="block">
-              <span className={labelClass}>Cantidad que llegó</span>
-              {quantity(received, (v) => setReceived(v.replace(/[^\d.,]/g, "")), "receive-help")}
-              <span id="receive-help" className="figures mt-1.5 block text-sm text-muted">
-                {decimal(received) > 0 ? `Quedará en ${qty(now + decimal(received))} ${shownUnit}` : `Se suma a ${qty(now)} ${shownUnit}`}
-              </span>
-            </label>
-          ) : (
-            <label className="block">
-              <span className={labelClass}>Stock contado</span>
-              {quantity(current, (v) => setCurrent(v.replace(/[^\d.,-]/g, "")), "count-help")}
-              <span id="count-help" className="mt-1.5 block text-sm text-muted">
-                Reemplaza el número actual.
-              </span>
-            </label>
-          )}
-          <label className="block">
-            <span className={labelClass}>Avisar desde</span>
-            {quantity(min, (v) => setMin(v.replace(/[^\d.,]/g, "")), "min-help")}
-            <span id="min-help" className="mt-1.5 block text-sm text-muted">
-              Vacío: solo avisa al agotarse.
-            </span>
-          </label>
-        </div>
-      </section>
-
-      {moves && (
-        <section aria-labelledby="moves-title" className="border-t border-line pt-5">
-          <h3 id="moves-title" className="mb-3 font-display text-[17px] font-semibold tracking-[-0.01em]">
-            Últimos movimientos
-          </h3>
-          {moves.length ? (
-            <ul className="divide-y divide-line rounded-panel border border-line">
-              {moves.map((entry) => (
-                <ActivityLine key={entry.id} entry={entry} withDate />
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted">Sin entradas ni conteos en {locationName} todavía.</p>
-          )}
-        </section>
-      )}
-
-      {error && (
-        <p role="alert" className="rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">
-          {error}
-        </p>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 border-t border-line pt-5">
-        {ingredient &&
-          canManage &&
-          (confirmDelete ? (
             <>
-              <span className="w-full text-sm text-ink-2">Se quita de todas las recetas y del stock de todas las sedes.</span>
-              <button type="button" disabled={busy} onClick={() => void remove()} className={button.danger}>
-                Eliminar {ingredient.name}
-              </button>
-              <button type="button" onClick={() => setConfirmDelete(false)} className={button.ghost}>
-                No
-              </button>
+              <label htmlFor="amount" className={labelClass}>
+                Cantidad que llegó
+              </label>
+              {quantity(received, (v) => setReceived(v.replace(/[^\d.,]/g, "")), "amount", "amount-hint")}
             </>
           ) : (
-            <button type="button" onClick={() => setConfirmDelete(true)} className={`${button.quietDanger} -ml-3`}>
-              Eliminar ingrediente
-            </button>
-          ))}
-        <button type="submit" disabled={busy} className={`${button.primary} ml-auto`}>
-          {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
-          {ingredient ? "Guardar" : "Crear ingrediente"}
-        </button>
+            <>
+              <label htmlFor="amount" className={labelClass}>
+                Cantidad contada
+              </label>
+              {quantity(current, (v) => setCurrent(v.replace(/[^\d.,-]/g, "")), "amount", "amount-hint")}
+            </>
+          )}
+          <p id="amount-hint" className="figures mt-1.5 text-[13.5px] text-muted">
+            {hint}
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="min" className={labelClass}>
+            Avisar cuando baje de
+          </label>
+          {quantity(min, (v) => setMin(v.replace(/[^\d.,]/g, "")), "min", "min-hint")}
+          <p id="min-hint" className="sr-only">
+            Vacío: solo avisa al agotarse. Cada venta pagada descuenta la receta y el stock puede quedar en negativo.
+          </p>
+        </div>
+
+        {moves && ingredient && (
+          <section aria-labelledby="moves-title">
+            <h3 id="moves-title" className="mb-2 text-[13px] font-bold text-muted">
+              Últimos movimientos
+            </h3>
+            {moves.length ? (
+              <ul className="grid gap-0.5">
+                {moves.map((entry) => (
+                  <MoveLine key={entry.id} entry={entry} />
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted">Sin entradas ni conteos en {locationName} todavía.</p>
+            )}
+          </section>
+        )}
+
+        {ingredient && data && (
+          <details open={dataOpen} onToggle={(e) => setDataOpen(e.currentTarget.open)} className="rounded-panel border border-line px-4 py-3 [&[open]>summary]:mb-4">
+            <summary className="cursor-pointer text-sm font-[650] text-ink-2">Datos del ingrediente</summary>
+            <div className="grid gap-5">{data}</div>
+          </details>
+        )}
+
+        {error && (
+          <p role="alert" className="rounded-control bg-danger-soft px-3 py-2.5 text-sm text-danger">
+            {error}
+          </p>
+        )}
       </div>
+
+      <footer className="flex shrink-0 gap-2.5 border-t border-line px-6 pt-4 pb-5 [&>*]:flex-1">
+        <button type="button" onClick={onCancel} className={button.secondary}>
+          Cancelar
+        </button>
+        <button type="submit" disabled={busy} className={button.primary}>
+          {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
+          {!ingredient ? "Crear ingrediente" : mode === "receive" ? "Sumar al stock" : "Guardar conteo"}
+        </button>
+      </footer>
     </form>
+  );
+}
+
+const BOGOTA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" });
+const SHORT_DATE = new Intl.DateTimeFormat("es-CO", { day: "numeric", month: "short", timeZone: "America/Bogota" });
+
+/** "Hoy, 7:40 a. m." / "Ayer" / "Hace 3 días" / "12 de nov" (days counted on the Bogotá calendar). */
+function when(iso: string) {
+  const then = new Date(iso);
+  const days = Math.round((Date.parse(BOGOTA_DAY.format(new Date())) - Date.parse(BOGOTA_DAY.format(then))) / 86_400_000);
+  if (days <= 0) return `Hoy, ${time(iso)}`;
+  if (days === 1) return "Ayer";
+  return days < 7 ? `Hace ${days} días` : SHORT_DATE.format(then);
+}
+
+/** One movement in the ingredient sheet: type and who, when, and how much it moved the stock. */
+function MoveLine({ entry }: { entry: ActivityEntry }) {
+  const receive = entry.kind === "STOCK_RECEIVE";
+  const d = entry.details;
+  const delta = receive ? Number(d.qty) : Number(d.after) - Number(d.before);
+  return (
+    <li className="grid grid-cols-[32px_1fr_auto] items-center gap-2.5 py-2 text-sm">
+      <span aria-hidden className={`grid size-8 place-items-center rounded-full ${receive ? "bg-success-soft text-success" : "bg-accent-soft text-accent"}`}>
+        {receive ? <PackagePlus size={16} /> : <ListChecks size={16} />}
+      </span>
+      <span>
+        {receive ? "Entrada" : "Conteo"} · {entry.users.full_name}
+        <small className="figures block text-[12.5px] text-muted">{when(entry.created_at)}</small>
+      </span>
+      <b className="figures">
+        {delta > 0 ? "+" : delta < 0 ? "−" : ""}
+        {qty(Math.abs(delta))} {d.unit}
+      </b>
+    </li>
   );
 }

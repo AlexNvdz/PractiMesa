@@ -23,7 +23,7 @@ export const choice =
 /** Segmented control (inner radius 10 + inset 4 = outer 14): a group of radios styled as one pill track. */
 export const seg = "inline-flex gap-0.5 rounded-[14px] bg-[#e8eae5] p-1";
 export const segItem =
-  "inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-control px-3 text-sm font-[650] text-ink-2 transition-[background-color,color] duration-150 hover:not-has-checked:bg-white/55 has-checked:bg-surface has-checked:text-ink has-checked:shadow-[0_1px_2px_rgb(23_30_46/0.1),0_0_0_1px_rgb(23_30_46/0.04)] has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-accent";
+  "inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-control px-3 text-sm font-[650] whitespace-nowrap text-ink-2 transition-[background-color,color] duration-150 hover:not-has-checked:bg-white/55 has-checked:bg-surface has-checked:text-ink has-checked:shadow-[0_1px_2px_rgb(23_30_46/0.1),0_0_0_1px_rgb(23_30_46/0.04)] has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-accent";
 
 /** Small state tag. Attention is ochre (`low`/`out`); yellow stays for food that is ready. */
 const tagBase = "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-[9px] text-[12.5px] font-bold whitespace-nowrap";

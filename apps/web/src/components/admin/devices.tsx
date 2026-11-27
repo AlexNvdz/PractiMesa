@@ -2,6 +2,7 @@
 
 import { Check, Copy, Link2, LoaderCircle, Monitor, Smartphone, Tablet } from "lucide-react";
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { CardSkeleton, useFirstPaint } from "@/components/skeleton";
 import { Dialog } from "@/components/dialog";
 import { FormAlert } from "@/components/form-alert";
 import { button, field, tag } from "@/components/ui";
@@ -43,6 +44,7 @@ export function Devices({ me }: { me: Me }) {
   const [unlinking, setUnlinking] = useState<string | null>(null);
   // "En uso ahora" is judged at the moment the list loaded.
   const [now] = useState(() => Date.now());
+  const fresh = useFirstPaint(devices !== null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
 
   const load = useCallback(() => api<Device[]>("/devices").then(setDevices, (err) => setError(errorMessage(err))), [api]);
@@ -56,9 +58,7 @@ export function Devices({ me }: { me: Me }) {
         {error}
       </p>
     ) : (
-      <p role="status" className="py-10 text-center text-[15px] text-muted">
-        Cargando dispositivos…
-      </p>
+      <CardSkeleton min={280} cards={3} label="Cargando dispositivos…" />
     );
   }
 
@@ -91,13 +91,14 @@ export function Devices({ me }: { me: Me }) {
 
       {devices.length ? (
         <ul className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-          {devices.map((d) => {
+          {devices.map((d, k) => {
             const Glyph = glyph(d.name);
             const live = d.last_used_at !== null && now - new Date(d.last_used_at).getTime() < LIVE_MS;
             return (
               <li
                 key={d.id}
-                className={`pm-card grid grid-cols-[48px_1fr] items-start gap-3.5 p-[18px] ${
+                style={{ "--i": k } as React.CSSProperties}
+                className={`pm-card grid grid-cols-[48px_1fr] items-start gap-3.5 p-[18px] ${fresh ? "enter" : ""} ${
                   d.current ? "shadow-[0_0_0_2px_var(--color-accent),0_1px_2px_rgb(23_30_46/0.04)]" : ""
                 }`}
               >

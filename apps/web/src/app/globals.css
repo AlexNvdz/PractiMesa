@@ -49,11 +49,11 @@
     @apply bg-ground text-ink font-sans antialiased;
   }
   ::selection {
-    background: var(--color-accent-soft);
-    color: var(--color-accent-strong);
+    background: var(--color-ready-soft);
+    color: var(--color-ready-ink);
   }
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2.5px solid var(--color-accent);
     outline-offset: 2px;
   }
   input {
@@ -257,5 +257,34 @@
 @keyframes pop {
   from {
     scale: 0.3;
+  }
+}
+
+/* Loading placeholders: pale bars; the light sweeps across only when motion is welcome. */
+@keyframes shimmer {
+  to { background-position: -100% 0; }
+}
+@layer components {
+  .sk-bar {
+    display: block;
+    border-radius: 9999px;
+    background: #eceee9;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  @layer components {
+    .sk-bar {
+      background: linear-gradient(90deg, #eceee9 30%, #f6f7f4 50%, #eceee9 70%) 0 0 / 300% 100%;
+      animation: shimmer 1.4s linear infinite;
+    }
+  }
+}
+
+/* Screen changes crossfade (React's <ViewTransition>); nothing moves for people who ask for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

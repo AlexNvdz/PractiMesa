@@ -66,7 +66,8 @@ export function Dialog({
           <X size={20} aria-hidden />
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">{open && children}</div>
+      {/* A sheet's content brings its own scrolling body and footer; a modal scrolls as a whole. */}
+      <div className={side ? "flex min-h-0 flex-1 flex-col" : "min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5"}>{open && children}</div>
     </dialog>
   );
 }

@@ -2,6 +2,7 @@
 
 import { Lock, ListChecks, PackagePlus, Users, Wallet, type LucideIcon } from "lucide-react";
 import { Fragment, useEffect, useState } from "react";
+import { RowSkeleton } from "@/components/skeleton";
 import { FormAlert } from "@/components/form-alert";
 import { Sentinel } from "@/components/sentinel";
 import { field, seg, segItem } from "@/components/ui";
@@ -206,9 +207,7 @@ export function Activity({ me }: { me: Me }) {
 
       {!entries ? (
         !error && (
-          <p role="status" className="py-10 text-center text-[15px] text-muted">
-            Cargando registro…
-          </p>
+          <RowSkeleton label="Cargando registro…" />
         )
       ) : !entries.length ? (
         <p className="pm-card px-6 py-12 text-center text-muted">

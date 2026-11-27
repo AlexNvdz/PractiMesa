@@ -226,7 +226,7 @@ function HandleStep({ onFound }: { onFound: (business: Business) => void }) {
 
   return (
     <>
-      <h1 className={heading}>Inicia sesión</h1>
+      <h1 className={heading}>Bienvenido de vuelta</h1>
       <p className="mt-1.5 text-[15px] text-muted">Escribe el identificador de tu negocio.</p>
       <form className="mt-7 space-y-5" onSubmit={onSubmit} noValidate>
         <label className="block">

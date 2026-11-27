@@ -2,6 +2,7 @@
 
 import { Check, LoaderCircle, Lock, Pencil, Plus, Power } from "lucide-react";
 import { useEffect, useState } from "react";
+import { CardSkeleton, useFirstPaint } from "@/components/skeleton";
 import { Dialog } from "@/components/dialog";
 import { button, field } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
@@ -28,6 +29,7 @@ export function Locations({ me }: { me: Me }) {
   const api = useApi();
   const { reloadMe, setLocation } = useAuth();
   const [locations, setLocations] = useState<Location[] | null>(null);
+  const fresh = useFirstPaint(locations !== null);
   const [editing, setEditing] = useState<Location | "new" | null>(null);
   const [stats, setStats] = useState<Record<string, { tables: number; people: number; devices: number }>>({});
   const [error, setError] = useState<string | null>(null);
@@ -52,9 +54,7 @@ export function Locations({ me }: { me: Me }) {
         {error}
       </p>
     ) : (
-      <p role="status" className="py-10 text-center text-[15px] text-muted">
-        Cargando sedes…
-      </p>
+      <CardSkeleton min={300} cards={2} label="Cargando sedes…" />
     );
   }
 
@@ -107,9 +107,9 @@ export function Locations({ me }: { me: Me }) {
         </div>
       </section>
 
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5">
-        {locations.map((l) => (
-          <li key={l.id}>
+      <ul className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3.5">
+        {locations.map((l, k) => (
+          <li key={l.id} style={{ "--i": k } as React.CSSProperties} className={fresh ? "enter" : undefined}>
             <article className="pm-card flex h-full min-h-[230px] flex-col overflow-hidden">
               <div className="flex-1 px-5 pt-5 pb-3.5">
                 <h3 className={`font-display text-2xl font-[750] tracking-[-0.02em] ${l.is_active ? "" : "text-muted"}`}>{l.name}</h3>
@@ -152,7 +152,7 @@ export function Locations({ me }: { me: Me }) {
             </article>
           </li>
         ))}
-        <li>
+        <li style={{ "--i": locations.length } as React.CSSProperties} className={fresh ? "enter" : undefined}>
           <button
             type="button"
             disabled={full}

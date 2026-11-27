@@ -3,6 +3,7 @@
 import { ChevronRight, LoaderCircle, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { RowSkeleton } from "@/components/skeleton";
 import { Dialog } from "@/components/dialog";
 import { FormAlert } from "@/components/form-alert";
 import { button, choice, field, seg, segItem, tag } from "@/components/ui";
@@ -83,9 +84,7 @@ export function Team({ me }: { me: Me }) {
         {error}
       </p>
     ) : (
-      <p role="status" className="py-10 text-center text-[15px] text-muted">
-        Cargando equipo…
-      </p>
+      <RowSkeleton label="Cargando equipo…" />
     );
   }
 
