@@ -2,8 +2,9 @@
 
 import { ArrowLeft, Eye, EyeOff, KeyRound, LoaderCircle, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { FormAlert } from "@/components/form-alert";
+import { Logo } from "@/components/logo";
 import { button, field } from "@/components/ui";
 import { ApiError, ROLE_LABEL, type Role, useAuth } from "@/lib/auth";
 
@@ -27,7 +28,9 @@ const DEMO_ROLES: Role[] = ["OWNER", "ADMIN", "CASHIER", "WAITER", "KITCHEN"];
 const START: Partial<Record<Role, string>> = { CASHIER: "/mesas", WAITER: "/mesas", KITCHEN: "/cocina" };
 /** The business typed on this browser, so the team skips step 1. */
 const HANDLE_KEY = "pm_handle";
-const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
+const labelClass = "mb-1.5 block text-sm font-semibold text-ink-2";
+const card = "rounded-sheet bg-surface shadow-panel ring-1 ring-ink/5";
+const heading = "font-display text-2xl font-bold tracking-[-0.02em] text-balance";
 
 function messageFor(err: unknown, unauthorized = "Correo o contraseña incorrectos."): string {
   if (err instanceof ApiError) {
@@ -93,13 +96,14 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-dvh justify-center px-5 pt-[12vh] pb-12">
-      <div className="w-full max-w-[400px]">
-        <p className="enter mb-8 text-center text-xl font-semibold tracking-[-0.02em]">PractiMesa</p>
+    <main className="relative flex min-h-dvh justify-center bg-surface px-4 pt-[10vh] pb-12">
+      <div aria-hidden className="login-canvas" />
+      <div className="relative w-full max-w-[420px]">
 
         {/* Next keeps this page mounted (hidden) while the panel is open: remounting on every session change
             clears typed PINs and passwords and the "Entrando…" state for the next person. */}
-        <div key={status} className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
+        <div key={status} className={`enter ${card} px-6 pt-8 pb-7 sm:px-8 sm:pt-9`}>
+          <Logo size={44} className="mb-7 text-[26px]" />
           {business === undefined && (
             <div role="status" className="flex justify-center py-10 text-muted">
               {spinner}
@@ -111,7 +115,7 @@ export default function LoginPage() {
             <>
               <div className="mb-6 flex items-start gap-3">
                 <div className="min-w-0 flex-1">
-                  <h1 className="truncate text-2xl font-semibold tracking-[-0.02em]">{business.name}</h1>
+                  <h1 className={`truncate ${heading}`}>{business.name}</h1>
                   <p className="mt-0.5 truncate text-[15px] text-muted">
                     @{business.handle}
                     {business.device && ` · ${business.device.location.name}`}
@@ -134,8 +138,8 @@ export default function LoginPage() {
         </div>
 
         {demo.length > 0 && (
-          <section aria-labelledby={demoId} className="enter mt-4 rounded-panel border border-line bg-surface p-5 [--i:2] sm:px-8">
-            <h2 id={demoId} className="text-[15px] font-semibold">
+          <section aria-labelledby={demoId} className={`enter mt-4 ${card} p-5 [--i:1] sm:px-8`}>
+            <h2 id={demoId} className="font-display text-[17px] font-bold tracking-[-0.01em]">
               Entrar como demo
             </h2>
             <p className="mt-0.5 text-sm text-muted text-pretty">
@@ -156,7 +160,7 @@ export default function LoginPage() {
                       key={role}
                       type="button"
                       onClick={() => void enterDemo(org.handle, role)}
-                      className={`${button.secondary} ${role === "OWNER" || role === "ADMIN" ? "col-span-3" : "col-span-2 px-2"}`}
+                      className={`${button.secondary} h-10 rounded-full text-sm ${role === "OWNER" || role === "ADMIN" ? "col-span-3" : "col-span-2 px-2"}`}
                     >
                       {ROLE_LABEL[role]}
                     </button>
@@ -172,7 +176,7 @@ export default function LoginPage() {
           </section>
         )}
 
-        <p className={`enter mt-6 text-center text-sm text-muted text-pretty ${demo.length ? "[--i:3]" : "[--i:2]"}`}>
+        <p className={`enter mt-6 text-center text-sm text-muted text-pretty ${demo.length ? "[--i:2]" : "[--i:1]"}`}>
           ¿No tienes usuario? Pídeselo al dueño de tu negocio.
         </p>
       </div>
@@ -193,7 +197,7 @@ function SwitchLink({ onClick, children }: { onClick: () => void; children: Reac
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2 text-sm font-medium text-accent-strong underline-offset-2 hover:underline"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-control px-2 text-sm font-semibold text-accent underline underline-offset-[3px] hover:text-accent-strong"
       >
         {children}
       </button>
@@ -222,7 +226,7 @@ function HandleStep({ onFound }: { onFound: (business: Business) => void }) {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">Inicia sesión</h1>
+      <h1 className={heading}>Inicia sesión</h1>
       <p className="mt-1.5 text-[15px] text-muted">Escribe el identificador de tu negocio.</p>
       <form className="mt-7 space-y-5" onSubmit={onSubmit} noValidate>
         <label className="block">
@@ -264,6 +268,7 @@ function PinStep({ onEmail }: { onEmail: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const errorId = useId();
+  const pinField = useRef<HTMLInputElement>(null);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -276,6 +281,10 @@ function PinStep({ onEmail }: { onEmail: () => void }) {
       setError(messageFor(err, "Usuario o PIN incorrecto."));
       setPin("");
       setBusy(false);
+      // A short shake says "wrong PIN" at a glance; the field stays focused for the next try.
+      pinField.current?.focus();
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
+        pinField.current?.animate({ translate: ["0", "-6px", "6px", "-6px", "6px", "0"] }, { duration: 400 });
     }
   }
 
@@ -299,6 +308,7 @@ function PinStep({ onEmail }: { onEmail: () => void }) {
       <label className="block">
         <span className={labelClass}>PIN</span>
         <input
+          ref={pinField}
           type="password"
           inputMode="numeric"
           autoComplete="current-password"

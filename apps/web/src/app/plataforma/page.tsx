@@ -6,6 +6,7 @@ import { platformApi, type PlatformAdmin } from "@/components/platform/api";
 import { Businesses } from "@/components/platform/businesses";
 import { Invitations } from "@/components/platform/invitations";
 import { FormAlert } from "@/components/form-alert";
+import { Logo, LogoMark } from "@/components/logo";
 import { button, field } from "@/components/ui";
 import { ApiError } from "@/lib/auth";
 
@@ -46,9 +47,10 @@ export default function PlataformaPage() {
 
   return (
     <div className="min-h-dvh">
-      <header className="border-b border-line bg-surface">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-5">
-          <p className="text-xl font-semibold tracking-[-0.02em]">PractiMesa</p>
+      <header className="sticky top-0 z-30 border-b border-line bg-ground/85 backdrop-blur-md">
+        <div className="mx-auto flex h-[68px] max-w-5xl items-center gap-3 px-5">
+          <LogoMark size={32} />
+          <p className="font-display text-[21px] font-[750] tracking-[-0.025em] text-accent">PractiMesa</p>
           <span className="rounded-full bg-ground px-2 py-0.5 text-xs font-medium text-muted">Plataforma</span>
           <nav aria-label="Secciones" className="ml-4 flex gap-1">
             {(
@@ -104,11 +106,12 @@ function PlatformLogin({ onLogin }: { onLogin: (admin: PlatformAdmin) => void })
   const invalid = error ? { "aria-invalid": true, "aria-describedby": errorId } : {};
 
   return (
-    <main className="flex min-h-dvh justify-center px-5 pt-[14vh] pb-12">
-      <div className="w-full max-w-[400px]">
-        <p className="enter mb-8 text-center text-xl font-semibold tracking-[-0.02em]">PractiMesa</p>
-        <div className="enter rounded-panel border border-line bg-surface p-7 [--i:1] sm:p-8">
-          <h1 className="text-2xl font-semibold tracking-[-0.02em] text-balance">Plataforma</h1>
+    <main className="relative flex min-h-dvh justify-center bg-surface px-5 pt-[14vh] pb-12">
+      <div aria-hidden className="login-canvas" />
+      <div className="relative w-full max-w-[420px]">
+        <Logo size={44} className="enter mb-8 justify-center text-[26px]" />
+        <div className="enter rounded-sheet border border-transparent bg-surface p-7 shadow-panel ring-1 ring-ink/5 [--i:1] sm:p-8">
+          <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-balance">Plataforma</h1>
           <p className="mt-1.5 text-[15px] text-muted">Administra los negocios de PractiMesa.</p>
           <form className="mt-7 space-y-5" onSubmit={onSubmit}>
             <label className="block space-y-1.5">

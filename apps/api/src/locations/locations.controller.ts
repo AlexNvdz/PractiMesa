@@ -33,6 +33,30 @@ export class LocationsController {
     return this.prisma.forTenant(req.tenant!.organizationId).locations.findMany({ orderBy: { created_at: 'asc' } });
   }
 
+  /** What each location holds, for its card: tables, active people who work there (assigned or "all") and linked devices. */
+  @Get('stats')
+  async stats(@Req() req: Request) {
+    const db = this.prisma.forTenant(req.tenant!.organizationId);
+    const [locations, tables, devices, users] = await Promise.all([
+      db.locations.findMany({ select: { id: true } }),
+      db.dining_tables.groupBy({ by: ['location_id'], _count: { _all: true } }),
+      db.devices.groupBy({ by: ['location_id'], _count: { _all: true } }),
+      db.users.findMany({ where: { is_active: true }, select: { allowed_location_ids: true } }),
+    ]);
+    const count = (rows: { location_id: string; _count: { _all: number } }[], id: string) => rows.find((r) => r.location_id === id)?._count._all ?? 0;
+    return Object.fromEntries(
+      locations.map((l) => [
+        l.id,
+        {
+          tables: count(tables, l.id),
+          devices: count(devices, l.id),
+          // An empty list means every location (Prisma returns [] for NULL).
+          people: users.filter((u) => !u.allowed_location_ids.length || u.allowed_location_ids.includes(l.id)).length,
+        },
+      ]),
+    );
+  }
+
   @Post()
   @UseGuards(PlanGuard)
   create(@Req() req: Request, @Body() body: unknown) {

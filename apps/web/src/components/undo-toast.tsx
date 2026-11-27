@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { ConciergeBell, LoaderCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 export interface Undo {
@@ -43,9 +43,11 @@ export function UndoToast({ undo, onClose }: { undo: Undo | null; onClose: () =>
       onPointerLeave={start}
       onFocus={pause}
       onBlur={start}
-      // Floats over the board: shadow, plus a transparent border so forced-colors mode still draws an edge.
-      className="enter fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-md items-center gap-3 rounded-panel border border-transparent bg-surface py-2 pr-2 pl-4 text-[15px] text-ink shadow-panel"
+      // Dark toast, centred at the bottom (clear of the tab bar and the floating "Para llevar" button).
+      className="enter fixed inset-x-0 bottom-6 z-40 mx-auto flex w-max max-w-[calc(100vw-32px)] items-center gap-3.5 rounded-[14px] bg-ink py-2.5 pr-2.5 pl-4 text-[14.5px] text-white shadow-panel max-sm:bottom-[calc(84px+env(safe-area-inset-bottom))] sm:max-[852px]:bottom-[88px]"
     >
+      {/* Handing food over is the bell moment: the one place a toast carries the service yellow. */}
+      {/: lista$/.test(undo.message) && <ConciergeBell size={16} aria-hidden className="shrink-0 text-ready" />}
       <p className="min-w-0 flex-1">{undo.message}</p>
       <button
         type="button"
@@ -59,7 +61,7 @@ export function UndoToast({ undo, onClose }: { undo: Undo | null; onClose: () =>
             onClose();
           }
         }}
-        className="inline-flex h-11 shrink-0 items-center gap-2 rounded-control px-3 font-semibold text-accent-strong transition-[background-color,scale] duration-150 ease-out hover:enabled:bg-accent-soft disabled:opacity-60 motion-safe:enabled:active:scale-[0.96]"
+        className="inline-flex h-9 shrink-0 items-center gap-2 rounded-control bg-white/12 px-3.5 font-bold text-white transition-[background-color,scale] duration-150 ease-out hover:enabled:bg-white/20 disabled:opacity-60 motion-safe:enabled:active:scale-[0.96]"
       >
         {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
         Deshacer

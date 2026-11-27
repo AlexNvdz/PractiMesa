@@ -111,6 +111,8 @@ export interface OrderRound {
   id: string;
   round: number;
   status: RoundStatus;
+  /** When the round went to the kitchen. */
+  created_at: string;
 }
 
 export interface Order {
@@ -173,3 +175,9 @@ export const roundsToServe = (o: Order) =>
 
 /** Paid before the food reached the table: Mesas keeps showing it until every round is delivered. */
 export const toServe = (o: Order) => o.payment_status === "PAID" && o.status !== "CANCELLED" && roundsToServe(o).length > 0;
+
+/** A round the kitchen finished and nobody has taken to the table yet. */
+export const hasReady = (o: Order) => o.order_rounds.some((r) => r.status === "READY");
+
+/** Tables and counter orders with food ready; a table with two orders ready counts once. */
+export const readyCount = (orders: Order[]) => new Set(orders.filter(hasReady).map((o) => o.table_id ?? o.id)).size;

@@ -1,9 +1,10 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Lock, ListChecks, PackagePlus, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
 import { FormAlert } from "@/components/form-alert";
-import { button, choice, field } from "@/components/ui";
+import { Sentinel } from "@/components/sentinel";
+import { field, seg, segItem } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import type { Me } from "@/lib/auth";
 import { cop, dateTime, qty, time } from "@/lib/format";
@@ -17,7 +18,6 @@ export interface ActivityEntry {
 }
 
 const PAGE = 50;
-const labelClass = "mb-1.5 block text-sm font-medium text-ink-2";
 const DAY = new Intl.DateTimeFormat("es-CO", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Bogota" });
 const DAY_KEY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Bogota" });
 // Colombia has no daylight saving time: a day picked in the filter always runs in UTC-5.
@@ -54,23 +54,33 @@ function describe({ kind, details: d }: ActivityEntry): { title: string; meta?: 
   }
 }
 
-/** One entry of the log; `withDate` when the list is not grouped by day. */
+const ICON: Record<ActivityEntry["kind"], { Icon: LucideIcon; tone: string }> = {
+  STOCK_RECEIVE: { Icon: PackagePlus, tone: "bg-success-soft text-success" },
+  STOCK_COUNT: { Icon: ListChecks, tone: "bg-accent-soft text-accent" },
+  REGISTER_OPEN: { Icon: Wallet, tone: "bg-ready-soft text-ready-ink" },
+  REGISTER_CLOSE: { Icon: Lock, tone: "bg-[#eceee9] text-ink-2" },
+};
+const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
+
+/** One entry of the log: who did what, the numbers behind it and the time; `withDate` when not grouped by day. */
 export function ActivityLine({ entry, withDate = false }: { entry: ActivityEntry; withDate?: boolean }) {
   const { title, meta, badge } = describe(entry);
+  const { Icon, tone } = ICON[entry.kind];
   return (
-    <li className="flex items-start gap-3 px-4 py-3 sm:gap-4 sm:px-5">
-      {/* On a phone the badge goes under the text so the title keeps its width. */}
-      <div className="flex min-w-0 flex-1 flex-col items-start gap-1 sm:flex-row sm:gap-4">
-        <div className="min-w-0 flex-1">
-          <p className="text-[15px] leading-snug">{title}</p>
-          {meta && <p className="figures text-sm text-muted">{meta}</p>}
-        </div>
-        {badge && <span className={`figures shrink-0 rounded-full px-2 py-0.5 text-xs font-medium sm:mt-0.5 ${badge[1]}`}>{badge[0]}</span>}
+    <li className="flex min-h-16 items-center gap-4 px-3.5 py-3 sm:px-[18px]">
+      <span aria-hidden className={`grid size-9 shrink-0 place-items-center rounded-full ${tone}`}>
+        <Icon size={16} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] leading-snug">
+          <span className="font-[650]">{entry.users.full_name}</span> {lower(title)}
+        </p>
+        {meta && <p className="figures text-[13px] text-ink-2">{meta}</p>}
+        {badge && <span className={`figures mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-bold ${badge[1]}`}>{badge[0]}</span>}
       </div>
-      <p className="w-28 shrink-0 text-right text-sm sm:w-36">
-        <span className="block truncate text-ink-2">{entry.users.full_name}</span>
-        <span className="figures block text-muted">{withDate ? dateTime(entry.created_at) : time(entry.created_at)}</span>
-      </p>
+      <time dateTime={entry.created_at} className="figures shrink-0 text-right text-[13px] text-muted">
+        {withDate ? dateTime(entry.created_at) : time(entry.created_at)}
+      </time>
     </li>
   );
 }
@@ -152,28 +162,27 @@ export function Activity({ me }: { me: Me }) {
         Entradas y conteos de inventario, aperturas y cierres de caja en {locationName}. Nadie puede editar ni borrar estos registros.
       </p>
 
-      <div className="mb-6 flex flex-wrap items-end gap-3">
-        <fieldset>
-          <legend className={labelClass}>Tipo</legend>
-          <div className="flex gap-2">
-            {(
-              [
-                ["", "Todo"],
-                ["inventory", "Inventario"],
-                ["cash", "Caja"],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={label} className={choice}>
-                <input type="radio" name="type" checked={type === value} onChange={() => setType(value)} className="sr-only" />
-                {label}
-              </label>
-            ))}
-          </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2.5">
+        <fieldset className={`${seg} max-sm:order-3 max-sm:w-full`}>
+          <legend className="sr-only">Tipo de movimiento</legend>
+          {(
+            [
+              ["", "Todo"],
+              ["inventory", "Inventario"],
+              ["cash", "Caja"],
+            ] as const
+          ).map(([value, label]) => (
+            <label key={label} className={`${segItem} max-sm:flex-1`}>
+              <input type="radio" name="type" checked={type === value} onChange={() => setType(value)} className="sr-only" />
+              {label}
+            </label>
+          ))}
         </fieldset>
-        <label className="block min-w-44">
-          <span className={labelClass}>Quién</span>
-          <select value={user} onChange={(e) => setUser(e.target.value)} className={field}>
-            <option value="">Todos</option>
+        <label className="flex items-center gap-1.5 text-muted">
+          <Users size={16} aria-hidden />
+          <span className="sr-only">Quién</span>
+          <select value={user} onChange={(e) => setUser(e.target.value)} className="h-10 rounded-control border border-line-strong bg-surface px-2.5 font-semibold text-ink-2 hover:border-muted">
+            <option value="">Todo el equipo</option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
                 {u.full_name}
@@ -181,14 +190,16 @@ export function Activity({ me }: { me: Me }) {
             ))}
           </select>
         </label>
-        <label className="block">
-          <span className={labelClass}>Desde</span>
-          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={`${field} figures`} />
-        </label>
-        <label className="block">
-          <span className={labelClass}>Hasta</span>
-          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={`${field} figures`} />
-        </label>
+        <div className="flex w-full gap-2 sm:w-auto">
+          <label className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted">
+            Desde
+            <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} className={`${field} figures h-10 min-w-0 flex-1 px-2.5 sm:w-auto`} />
+          </label>
+          <label className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-muted">
+            Hasta
+            <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} className={`${field} figures h-10 min-w-0 flex-1 px-2.5 sm:w-auto`} />
+          </label>
+        </div>
       </div>
 
       {error && <FormAlert>{error}</FormAlert>}
@@ -200,31 +211,29 @@ export function Activity({ me }: { me: Me }) {
           </p>
         )
       ) : !entries.length ? (
-        <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="pm-card px-6 py-12 text-center text-muted">
           {filtered ? "Nada coincide con estos filtros." : `Todavía no hay movimientos en ${locationName}.`}
         </p>
       ) : (
         <>
-          {[...days].map(([key, list]) => (
-            <section key={key} aria-labelledby={`day-${key}`} className="mb-6">
-              <h2 id={`day-${key}`} className="mb-3 text-sm font-semibold text-ink-2">
-                {capital(DAY.format(new Date(list[0].created_at)))}
-              </h2>
-              <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
+          <ul className="pm-card [&>li+li]:border-t [&>li+li]:border-line [&>li[data-day]+li]:border-t-0">
+            {[...days].map(([key, list]) => (
+              <Fragment key={key}>
+                <li
+                  data-day
+                  className="sticky top-[60px] z-[2] border-b border-line bg-rail/90 px-3.5 py-2.5 text-[13px] font-bold text-ink-2 backdrop-blur-md first:rounded-t-[15px] sm:top-[68px] sm:px-[18px]"
+                >
+                  {capital(DAY.format(new Date(list[0].created_at)))}
+                </li>
                 {list.map((entry) => (
                   <ActivityLine key={entry.id} entry={entry} />
                 ))}
-              </ul>
-            </section>
-          ))}
-          {more && (
-            <div className="flex justify-center">
-              <button type="button" disabled={busy} onClick={() => void loadMore()} className={button.secondary}>
-                {busy && <LoaderCircle size={18} className="animate-spin motion-reduce:[animation-duration:6s]" aria-hidden />}
-                Ver más
-              </button>
-            </div>
-          )}
+              </Fragment>
+            ))}
+          </ul>
+          <Sentinel onNear={more && !error ? () => void loadMore() : undefined} busy={busy}>
+            {more ? (busy ? "Cargando más…" : `Mostrando ${entries.length}`) : `${entries.length} en total`}
+          </Sentinel>
         </>
       )}
     </div>

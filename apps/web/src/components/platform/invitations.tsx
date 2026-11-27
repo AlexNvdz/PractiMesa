@@ -46,7 +46,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
 
   if (!invitations) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (
@@ -74,7 +74,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em]">Invitaciones</h1>
+        <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Invitaciones</h1>
         <button type="button" onClick={() => setDialog("new")} className={`${button.primary} ml-auto pl-3.5`}>
           <Plus size={18} strokeWidth={2.25} aria-hidden />
           Nueva invitación
@@ -85,7 +85,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
       </p>
 
       {invitations.length ? (
-        <ul className="mt-6 divide-y divide-line rounded-panel border border-line bg-surface">
+        <ul className="mt-6 divide-y divide-line pm-card">
           {invitations.map((i) => {
             const expired = !i.used_at && !i.revoked_at && new Date(i.expires_at).getTime() <= now;
             const open = !i.used_at && !i.revoked_at && !expired;
@@ -126,7 +126,7 @@ export function Invitations({ onSessionEnd }: { onSessionEnd: () => void }) {
           })}
         </ul>
       ) : (
-        <p className="mt-6 rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="mt-6 pm-card px-5 py-10 text-center text-[15px] text-muted">
           Todavía no has creado invitaciones.
         </p>
       )}

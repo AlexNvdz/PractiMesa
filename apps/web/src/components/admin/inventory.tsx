@@ -4,7 +4,8 @@ import { LoaderCircle, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type ActivityEntry, ActivityLine } from "@/components/admin/activity";
 import { Dialog } from "@/components/dialog";
-import { button, choice, field } from "@/components/ui";
+import { Sentinel, useWindowed } from "@/components/sentinel";
+import { button, choice, field, seg, segItem } from "@/components/ui";
 import { errorMessage, useApi } from "@/lib/api";
 import type { Me } from "@/lib/auth";
 import { fold, qty } from "@/lib/format";
@@ -22,8 +23,84 @@ function level(stock?: LocationStock): "out" | "low" | null {
   return current <= Number(stock?.min_alert_qty ?? 0) ? "low" : null;
 }
 
+/**
+ * Stock bar: how much there is, with a dark mark at the alert minimum. The scale leaves room above the
+ * minimum so a healthy stock reads as a long bar.
+ */
+export function StockMeter({ stock, unit, big = false }: { stock?: LocationStock; unit: string; big?: boolean }) {
+  const current = Number(stock?.current_qty ?? 0);
+  const min = Number(stock?.min_alert_qty ?? 0);
+  const state = level(stock);
+  const scale = Math.max(min * 2.5, current, 1);
+  return (
+    <span
+      role="img"
+      aria-label={`${qty(current)} ${unit}${min > 0 ? `, mínimo ${qty(min)} ${unit}` : ""}`}
+      className={`relative block rounded-full bg-line ${big ? "h-3" : "h-2"}`}
+    >
+      <span
+        className={`absolute inset-y-0 left-0 rounded-full ${state === "out" ? "w-1.5 bg-danger" : state === "low" ? "bg-warning" : "bg-success"}`}
+        style={state === "out" ? undefined : { width: `${(current / scale) * 100}%` }}
+      />
+      {min > 0 && <span className="absolute -inset-y-1 w-0.5 rounded-full bg-ink" style={{ left: `${(min / scale) * 100}%` }} />}
+    </span>
+  );
+}
+
 const decimal = (text: string) => (text.trim() ? Number(text.replace(",", ".")) : 0);
 const same = (a: string, b: string) => fold(a.trim()) === fold(b.trim());
+
+/** The stock list, shown page by page (30 rows, more as the end comes near) so a long list stays light. */
+function StockRows({
+  rows,
+  stock,
+  resetKey,
+  onOpen,
+}: {
+  rows: Ingredient[];
+  stock: Record<string, LocationStock>;
+  resetKey: string;
+  onOpen: (ingredient: Ingredient) => void;
+}) {
+  const { visible, more, shown } = useWindowed(rows, 30, resetKey);
+  return (
+    <>
+      <ul className="divide-y divide-line pm-card">
+        {visible.map((g) => {
+              const here = stock[g.id];
+              const state = level(here);
+              const min = Number(here?.min_alert_qty ?? 0);
+              return (
+                // Rows far off screen skip layout and paint until scrolled near: long lists stay fast.
+                <li key={g.id} className="[contain-intrinsic-size:auto_64px] [content-visibility:auto]">
+                  <button
+                    type="button"
+                    onClick={() => onOpen(g)}
+                    className="grid min-h-16 w-full grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] items-center gap-x-5 gap-y-1.5 px-5 py-3 text-left transition-[background-color] duration-150 hover:bg-ground max-sm:grid-cols-[minmax(0,1fr)_auto]"
+                  >
+                    <span className="min-w-0 truncate text-[15px] font-semibold">
+                      {g.name}
+                      {state === "out" && <span className="ml-2 rounded-full bg-danger-soft px-2 py-0.5 align-middle text-xs font-semibold text-danger">Sin stock</span>}
+                      {state === "low" && <span className="ml-2 rounded-full bg-warning-soft px-2 py-0.5 align-middle text-xs font-semibold text-warning">Bajo el mínimo</span>}
+                    </span>
+                    <span className="max-sm:order-last max-sm:col-span-2">
+                      <StockMeter stock={here} unit={g.unit} />
+                    </span>
+                    <span className="text-right">
+                      <span className={`figures block text-[15px] font-bold ${state === "out" ? "text-danger" : ""}`}>
+                        {qty(here?.current_qty ?? 0)} {g.unit}
+                      </span>
+                      <span className="figures block text-xs text-muted">{min > 0 ? `Mínimo ${qty(min)} ${g.unit}` : "Sin mínimo"}</span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+      </ul>
+      <Sentinel onNear={more}>{more ? `Mostrando ${shown} de ${rows.length}` : `${rows.length} en total`}</Sentinel>
+    </>
+  );
+}
 
 /**
  * Inventory: ingredients (organization-wide) with their stock and alert minimum at the current location,
@@ -36,7 +113,7 @@ export function Inventory({ me }: { me: Me }) {
   const [ingredients, setIngredients] = useState<Ingredient[] | null>(null);
   const [stock, setStock] = useState<Record<string, LocationStock>>({});
   const [query, setQuery] = useState("");
-  const [onlyAlerts, setOnlyAlerts] = useState(false);
+  const [filter, setFilter] = useState<"all" | "alert" | "out">("all");
   const [editing, setEditing] = useState<Ingredient | "new" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const locationName = me.locations.find((l) => l.id === me.current_location_id)?.name ?? "esta sede";
@@ -58,7 +135,7 @@ export function Inventory({ me }: { me: Me }) {
 
   if (!ingredients) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (
@@ -69,7 +146,8 @@ export function Inventory({ me }: { me: Me }) {
   }
 
   const alerts = ingredients.filter((g) => level(stock[g.id]));
-  const shown = (onlyAlerts ? alerts : ingredients).filter((g) => !query || fold(g.name).includes(fold(query)));
+  const out = alerts.filter((g) => level(stock[g.id]) === "out");
+  const shown = (filter === "alert" ? alerts : filter === "out" ? out : ingredients).filter((g) => !query || fold(g.name).includes(fold(query)));
   const ingredient = editing === "new" ? undefined : (editing ?? undefined);
 
   return (
@@ -80,16 +158,25 @@ export function Inventory({ me }: { me: Me }) {
           <Search size={18} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" aria-hidden />
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar ingrediente" className={`${field} pl-10`} />
         </label>
-        <fieldset className="flex gap-2">
+        <fieldset className={`${seg} max-sm:order-3 max-sm:w-full`}>
           <legend className="sr-only">Mostrar</legend>
-          {[
-            { value: false, label: "Todos", count: ingredients.length },
-            { value: true, label: "Con alerta", count: alerts.length },
-          ].map((f) => (
-            <label key={f.label} className={`${choice} gap-1.5`}>
-              <input type="radio" name="filter" checked={onlyAlerts === f.value} onChange={() => setOnlyAlerts(f.value)} className="sr-only" />
+          {(
+            [
+              { value: "all", label: "Todos", count: ingredients.length },
+              { value: "alert", label: "Con alerta", count: alerts.length },
+              { value: "out", label: "Sin stock", count: out.length },
+            ] as const
+          ).map((f) => (
+            <label key={f.value} className={`${segItem} max-sm:flex-1`}>
+              <input type="radio" name="filter" checked={filter === f.value} onChange={() => setFilter(f.value)} className="sr-only" />
               {f.label}
-              <span className="figures font-normal">{f.count}</span>
+              <span
+                className={`figures grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-xs font-bold ${
+                  f.value !== "all" && f.count ? (f.value === "out" ? "bg-danger-soft text-danger" : "bg-warning-soft text-warning") : "bg-ink/[0.07]"
+                }`}
+              >
+                {f.count}
+              </span>
             </label>
           ))}
         </fieldset>
@@ -102,7 +189,7 @@ export function Inventory({ me }: { me: Me }) {
       </div>
 
       {!ingredients.length ? (
-        <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="pm-card px-5 py-10 text-center text-[15px] text-muted">
           {canManage ? (
             <>Todavía no hay ingredientes. Crea el primero con &ldquo;Nuevo ingrediente&rdquo; y luego úsalo en las recetas del catálogo.</>
           ) : (
@@ -111,43 +198,31 @@ export function Inventory({ me }: { me: Me }) {
         </p>
       ) : !shown.length ? (
         <p className="py-10 text-center text-[15px] text-muted">
-          {query ? <>Ningún ingrediente coincide con &ldquo;{query}&rdquo;.</> : "Ningún ingrediente está en o bajo su mínimo."}
+          {query ? (
+            <>Ningún ingrediente coincide con &ldquo;{query}&rdquo;.</>
+          ) : filter === "out" ? (
+            "Ningún ingrediente está sin stock."
+          ) : (
+            "Ningún ingrediente está en o bajo su mínimo."
+          )}
         </p>
       ) : (
         <section aria-labelledby="stock-title">
-          <h2 id="stock-title" className="mb-3 text-sm font-semibold text-ink-2">
+          <h2 id="stock-title" className="mb-1 font-display text-[17px] font-semibold tracking-[-0.01em]">
             Stock en {locationName}
           </h2>
-          <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
-            {shown.map((g) => {
-              const here = stock[g.id];
-              const state = level(here);
-              const min = Number(here?.min_alert_qty ?? 0);
-              return (
-                <li key={g.id}>
-                  <button
-                    type="button"
-                    onClick={() => setEditing(g)}
-                    className="flex min-h-14 w-full items-center gap-4 px-5 py-3 text-left transition-[background-color] duration-150 first:rounded-t-panel last:rounded-b-panel hover:bg-ground"
-                  >
-                    <span className="min-w-0 flex-1 text-[15px] font-medium">{g.name}</span>
-                    {state === "out" && <span className="rounded-full bg-danger-soft px-2 py-0.5 text-xs font-medium text-danger">Sin stock</span>}
-                    {state === "low" && <span className="rounded-full bg-warning-soft px-2 py-0.5 text-xs font-medium text-warning">Bajo el mínimo</span>}
-                    <span className="text-right">
-                      <span className={`figures block text-[15px] font-medium ${state === "out" ? "text-danger" : ""}`}>
-                        {qty(here?.current_qty ?? 0)} {g.unit}
-                      </span>
-                      <span className="figures block text-xs text-muted">{min > 0 ? `Mínimo ${qty(min)} ${g.unit}` : "Sin mínimo"}</span>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+          <p className="mb-3 text-sm text-muted">Cada barra muestra cuánto hay; la marca oscura es el mínimo que dispara la alerta.</p>
+          <StockRows rows={shown} stock={stock} resetKey={`${query}|${filter}`} onOpen={setEditing} />
         </section>
       )}
 
-      <Dialog open={editing !== null} onClose={() => setEditing(null)} title={ingredient ? ingredient.name : "Nuevo ingrediente"}>
+      <Dialog
+        open={editing !== null}
+        onClose={() => setEditing(null)}
+        title={ingredient ? ingredient.name : "Nuevo ingrediente"}
+        subtitle={ingredient ? `Inventario en ${locationName}` : undefined}
+        side
+      >
         <IngredientForm
           key={ingredient?.id ?? "new"}
           ingredient={ingredient}
@@ -307,19 +382,22 @@ function IngredientForm({
           <p className="-mt-2 text-sm text-muted sm:col-span-2">Las recetas y el stock usan esta unidad.</p>
         </div>
       ) : (
-        <p className="-mt-3 text-[15px] text-ink-2">
-          Hay{" "}
-          <span className="figures font-semibold text-ink">
-            {qty(now)} {shownUnit}
-          </span>{" "}
-          en {locationName}.
-        </p>
+        <div className="-mt-3 space-y-2">
+          <StockMeter stock={stock} unit={shownUnit} big />
+          <p className="text-[15px] text-ink-2">
+            Hay{" "}
+            <span className="figures font-semibold text-ink">
+              {qty(now)} {shownUnit}
+            </span>{" "}
+            en {locationName}.
+          </p>
+        </div>
       )}
 
       <section aria-label={`Stock en ${locationName}`} className={canManage ? "border-t border-line pt-5" : ""}>
         {canManage && (
           <>
-            <h3 className="text-[15px] font-semibold">En {locationName}</h3>
+            <h3 className="font-display text-[17px] font-semibold tracking-[-0.01em]">En {locationName}</h3>
             <p className="mt-0.5 mb-3 text-sm text-muted">Cada venta pagada descuenta la receta. Si se vende más de lo contado, el stock queda en negativo y la venta sigue.</p>
           </>
         )}
@@ -367,7 +445,7 @@ function IngredientForm({
 
       {moves && (
         <section aria-labelledby="moves-title" className="border-t border-line pt-5">
-          <h3 id="moves-title" className="mb-3 text-[15px] font-semibold">
+          <h3 id="moves-title" className="mb-3 font-display text-[17px] font-semibold tracking-[-0.01em]">
             Últimos movimientos
           </h3>
           {moves.length ? (

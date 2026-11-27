@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="320" height="320" viewBox="0 0 320 320">
+  <!-- Login canvas tile: restaurant pictograms in one stroke, drawn once and reused. -->
+  <defs>
+    <g id="cup"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><path d="M6 2v2M10 2v2M14 2v2"/></g>
+    <g id="utensils"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></g>
+    <g id="plate"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/></g>
+    <g id="bell"><path d="M3 20a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1Z"/><path d="M20 16a8 8 0 1 0-16 0"/><path d="M12 4v4M10 4h4"/></g>
+    <g id="hat"><path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.457.316-.844.727-1.041a4 4 0 0 0-2.134-7.589 5 5 0 0 0-9.186 0 4 4 0 0 0-2.134 7.588c.411.198.727.585.727 1.041V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/></g>
+    <g id="glass"><path d="M8 22h8M7 10h10M12 15v7"/><path d="M12 15a5 5 0 0 0 5-5c0-2-.5-4-2-8H9c-1.5 4-2 6-2 8a5 5 0 0 0 5 5Z"/></g>
+    <g id="bean"><ellipse cx="12" cy="12" rx="6.5" ry="9.5"/><path d="M12 2.5c-3 4.5 3 14.5 0 19"/></g>
+    <g id="table"><circle cx="9" cy="12" r="7"/><circle cx="9" cy="12" r="3.5"/><path d="M16 12h6.5"/></g>
+    <g id="bowl"><path d="M3 11h18a9 9 0 0 1-18 0Z"/><path d="M8 7.5c0-1 1-1 1-2s-1-1-1-2M12 7.5c0-1 1-1 1-2s-1-1-1-2M16 7.5c0-1 1-1 1-2s-1-1-1-2"/></g>
+  </defs>
+  <g fill="none" stroke="#2a3347" stroke-opacity="0.13" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+    <use xlink:href="#cup" href="#cup" transform="translate(22 24) scale(1.6) rotate(-8 12 12)"/>
+    <use xlink:href="#utensils" href="#utensils" transform="translate(118 10) scale(1.5) rotate(14 12 12)"/>
+    <use xlink:href="#plate" href="#plate" transform="translate(214 30) scale(1.7)"/>
+    <use xlink:href="#bean" href="#bean" transform="translate(64 118) scale(1.3) rotate(32 12 12)"/>
+    <use xlink:href="#bell" href="#bell" transform="translate(158 104) scale(1.7) rotate(-6 12 12)"/>
+    <use xlink:href="#glass" href="#glass" transform="translate(262 128) scale(1.4) rotate(10 12 12)"/>
+    <use xlink:href="#table" href="#table" transform="translate(14 214) scale(1.6) rotate(45 12 12)"/>
+    <use xlink:href="#hat" href="#hat" transform="translate(112 206) scale(1.6) rotate(-12 12 12)"/>
+    <use xlink:href="#bowl" href="#bowl" transform="translate(212 222) scale(1.6) rotate(6 12 12)"/>
+    <use xlink:href="#bean" href="#bean" transform="translate(286 268) scale(0.9) rotate(-28 12 12)"/>
+    <use xlink:href="#plate" href="#plate" transform="translate(84 290) scale(0.8)"/>
+    <use xlink:href="#utensils" href="#utensils" transform="translate(296 10) scale(0.85) rotate(-20 12 12)"/>
+  </g>
+</svg>

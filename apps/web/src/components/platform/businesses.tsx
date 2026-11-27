@@ -35,7 +35,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
 
   if (!orgs) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (
@@ -66,7 +66,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-[-0.02em]">Negocios</h1>
+      <h1 className="font-display text-2xl font-bold tracking-[-0.02em]">Negocios</h1>
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
         <fieldset className="flex flex-wrap gap-2">
@@ -93,7 +93,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
       </div>
 
       {shown.length ? (
-        <ul className="mt-5 divide-y divide-line rounded-panel border border-line bg-surface">
+        <ul className="mt-5 divide-y divide-line pm-card">
           {shown.map((o) => (
             <li key={o.id}>
               <button
@@ -118,7 +118,7 @@ export function Businesses({ onSessionEnd }: { onSessionEnd: () => void }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-5 rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="mt-5 pm-card px-5 py-10 text-center text-[15px] text-muted">
           {orgs.length ? "Ningún negocio coincide con la búsqueda." : "Todavía no hay negocios."}
         </p>
       )}

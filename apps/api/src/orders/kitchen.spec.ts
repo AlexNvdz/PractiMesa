@@ -55,8 +55,8 @@ describe('kitchen rounds', () => {
     order = (await waiter1('POST', '/orders', { order_type: 'DINE_IN', table_id: table, ...line(soup, { notes: 'Sin cebolla' }) })).body;
     order = (await waiter1('POST', `/orders/${order.id}/items`, line(soup))).body;
     expect(order.order_rounds).toEqual([
-      { id: expect.any(String), round: 1, status: 'PENDING' },
-      { id: expect.any(String), round: 2, status: 'PENDING' },
+      { id: expect.any(String), round: 1, status: 'PENDING', created_at: expect.any(String) },
+      { id: expect.any(String), round: 2, status: 'PENDING', created_at: expect.any(String) },
     ]);
     const admin2 = await client(app, orgA.users.ADMIN, orgA.locations[1]);
     expect((await admin2('POST', '/orders', { order_type: 'PICKUP', ...line(soup) })).status).toBe(201);

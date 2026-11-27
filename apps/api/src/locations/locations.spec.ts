@@ -32,6 +32,16 @@ describe('locations', () => {
     expect(res.body.map((l: { id: string }) => l.id)).toEqual(multi.locations);
   });
 
+  it('counts tables, people and devices per location', async () => {
+    const api = await client(app, multi.users.OWNER);
+    const res = await api('GET', '/locations/stats');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body)).toEqual(multi.locations);
+    expect(res.body[multi.locations[0]]).toEqual({ tables: 0, devices: 0, people: expect.any(Number) });
+    expect(res.body[multi.locations[0]].people).toBeGreaterThan(0);
+    expect((await (await client(app, multi.users.ADMIN))('GET', '/locations/stats')).status).toBe(403);
+  });
+
   it('is restricted to the owner', async () => {
     const api = await client(app, multi.users.ADMIN);
     expect((await api('GET', '/locations')).status).toBe(403);

@@ -61,7 +61,7 @@ export function TablesEditor({ me }: { me: Me }) {
 
   if (!tables) {
     return error ? (
-      <p role="alert" className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-danger">
+      <p role="alert" className="pm-card px-5 py-10 text-center text-[15px] text-danger">
         {error}
       </p>
     ) : (
@@ -94,7 +94,7 @@ export function TablesEditor({ me }: { me: Me }) {
       </div>
 
       {!tables.length && (
-        <p className="rounded-panel border border-line bg-surface px-5 py-10 text-center text-[15px] text-muted">
+        <p className="pm-card px-5 py-10 text-center text-[15px] text-muted">
           {locationName} todavía no tiene mesas. Crea varias de una vez con &ldquo;Agregar mesas&rdquo;.
         </p>
       )}
@@ -105,7 +105,7 @@ export function TablesEditor({ me }: { me: Me }) {
             {groups.length > 1 || floors.length ? g.name : `Mesas de ${locationName}`}
             <span className="figures font-normal text-muted">{g.tables.length}</span>
           </h2>
-          <ul className="divide-y divide-line rounded-panel border border-line bg-surface">
+          <ul className="divide-y divide-line pm-card">
             {g.tables.map((t) => (
               <li key={t.id}>
                 <button
