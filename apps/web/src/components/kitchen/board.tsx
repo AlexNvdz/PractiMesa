@@ -9,7 +9,7 @@ import { errorMessage, useApi } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { elapsed } from "@/lib/format";
 import { useLive } from "@/lib/live";
-import type { KitchenRound, RoundStatus } from "@/lib/pos";
+import { type KitchenRound, pickupLabel, type RoundStatus } from "@/lib/pos";
 
 // `tab` = short name for the phone selector; `count` colours the lane count like the round state.
 const LANES = [
@@ -42,7 +42,7 @@ function chime(audio: AudioContext) {
   }
 }
 
-const where = (r: KitchenRound) => r.orders.dining_tables?.name ?? `Pedido #${r.orders.order_number}`;
+const where = (r: KitchenRound) => r.orders.dining_tables?.name ?? (r.orders.customer_name ? `Pedido ${pickupLabel(r.orders)}` : `Pedido #${r.orders.order_number}`);
 
 /**
  * Kitchen screen (KDS): one ticket per round, oldest first, in three lanes. Every terminal of the location

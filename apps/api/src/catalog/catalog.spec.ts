@@ -150,6 +150,14 @@ describe('ingredients and recipes', () => {
     expect((await ownerA('DELETE', `/ingredients/${temp}`)).status).toBe(204);
     expect((await cashierA('GET', '/ingredients')).body.map((i: { name: string }) => i.name)).toEqual(['Café molido', 'Leche']);
     expect((await ownerA('POST', '/ingredients', { name: 'Azúcar' })).status).toBe(400);
+    // A repeated name answers 409 with a clear message, ignoring case; renaming to its own name is fine.
+    const repeated = await ownerA('POST', '/ingredients', { name: ' leche ', unit: 'ml' });
+    expect([repeated.status, repeated.body.message]).toEqual([409, 'Ya existe un ingrediente llamado "leche"']);
+    expect((await ownerA('PATCH', `/ingredients/${coffee}`, { name: 'LECHE' })).status).toBe(409);
+    expect((await ownerA('PATCH', `/ingredients/${milk}`, { name: 'Leche' })).status).toBe(200);
+    const otherOrg = await ownerB('POST', '/ingredients', { name: 'Leche', unit: 'ml' }); // same name, other business
+    expect(otherOrg.status).toBe(201);
+    await ownerB('DELETE', `/ingredients/${otherOrg.body.id}`);
     expect((await ownerB('GET', '/ingredients')).body).toEqual([]);
   });
 

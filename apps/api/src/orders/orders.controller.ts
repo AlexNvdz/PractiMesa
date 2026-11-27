@@ -110,13 +110,16 @@ export class OrdersController {
   create(@Req() req: Request, @Body() body: unknown) {
     const tenant = req.tenant!;
     const locationId = requireLocation(tenant);
-    const head = parseBody<{ order_type: string; table_id?: string }>(
+    const head = parseBody<{ order_type: string; table_id?: string; customer_name?: string }>(
       body,
-      { order_type: oneOf('DINE_IN', 'PICKUP'), table_id: uuid },
+      { order_type: oneOf('DINE_IN', 'PICKUP'), table_id: uuid, customer_name: text(60) },
       ['order_type'],
     );
     if ((head.order_type === 'DINE_IN') !== (head.table_id !== undefined)) {
       throw new BadRequestException('La mesa es obligatoria para consumo en el local y no aplica para llevar');
+    }
+    if (head.customer_name !== undefined && head.order_type !== 'PICKUP') {
+      throw new BadRequestException('El nombre del cliente solo aplica para llevar');
     }
     const items = parseItems(body);
     return this.prisma.tenantTransaction(tenant.organizationId, async (tx) => {
@@ -128,7 +131,7 @@ export class OrdersController {
         if (await tx.orders.count({ where: { table_id: head.table_id, ...OPEN } })) {
           throw new ConflictException('La mesa ya tiene una cuenta abierta');
         }
-        await tx.dining_tables.update({ where: { id: head.table_id }, data: { status: 'OCCUPIED' } });
+        await tx.dining_tables.update({ where: { id: head.table_id }, data: { status: 'OCCUPIED', reserved_for: null } });
       }
       const order = await tx.orders.create({
         data: {
@@ -136,6 +139,7 @@ export class OrdersController {
           table_id: head.table_id,
           channel: 'POS',
           order_type: head.order_type,
+          customer_name: head.customer_name?.trim(),
           status: 'CONFIRMED',
           subtotal_cop: 0,
           tax_cop: 0,

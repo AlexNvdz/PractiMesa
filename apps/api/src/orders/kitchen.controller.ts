@@ -19,7 +19,7 @@ const STATE = { PENDING: 'pendiente', PREPARING: 'en preparación', READY: 'list
 const SERVERS = new Set(['CASHIER', 'WAITER']);
 
 const ROUND_INCLUDE = {
-  orders: { select: { order_number: true, order_type: true, status: true, table_id: true, dining_tables: { select: { name: true } } } },
+  orders: { select: { order_number: true, order_type: true, customer_name: true, status: true, table_id: true, dining_tables: { select: { name: true } } } },
   // Voided lines stay on the ticket, crossed out, so the kitchen stops preparing them.
   order_items: {
     orderBy: { voided_at: { sort: 'asc', nulls: 'first' } },

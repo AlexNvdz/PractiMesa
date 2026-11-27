@@ -2,14 +2,14 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, P
 import type { Request } from 'express';
 import { Roles } from '../common/guards/roles.guard';
 import { requireLocation } from '../common/tenant/tenant-context';
-import { int, nullable, oneOf, parseBody, text, uuid } from '../common/validation';
+import { int, isoDateTime, nullable, oneOf, parseBody, text, uuid } from '../common/validation';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** number and name are unique per location; floor_id must be a floor of the same location (FK). */
 const TABLE = { name: text(40), number: int(1, 9999), capacity: int(1, 99), floor_id: nullable(uuid) };
 type TableInput = { name?: string; number?: number; capacity?: number; floor_id?: string | null };
-const STATUS = { status: oneOf('FREE', 'OCCUPIED', 'RESERVED') };
+const STATUS = { status: oneOf('FREE', 'OCCUPIED', 'RESERVED'), reserved_for: nullable(isoDateTime) };
 const BATCH = { count: int(1, 50), capacity: TABLE.capacity, floor_id: TABLE.floor_id };
 
 /** Next free number of the location. Locks the location row so concurrent creates do not pick the same one. */
@@ -82,7 +82,9 @@ export class TablesController {
   @Roles('OWNER', 'ADMIN', 'CASHIER', 'WAITER')
   setStatus(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string, @Body() body: unknown) {
     const tenant = req.tenant!;
-    const data = parseBody<{ status: string }>(body, STATUS, ['status']);
+    const { status, reserved_for } = parseBody<{ status: string; reserved_for?: string | null }>(body, STATUS, ['status']);
+    // The time only exists while the table is reserved (DB check); any other status clears it.
+    const data = { status, reserved_for: status === 'RESERVED' && reserved_for ? new Date(reserved_for) : null };
     return this.prisma
       .forTenant(tenant.organizationId)
       .dining_tables.update({ where: { id, location_id: requireLocation(tenant) }, data });

@@ -157,6 +157,21 @@ describe('table accounts', () => {
     await expect(db.dining_tables.findUnique({ where: { id: table } })).resolves.toMatchObject({ status: 'OCCUPIED' });
   });
 
+  it('keeps the customer name on a counter order only, and frees a reserved table when its account opens', async () => {
+    const water1 = [{ product_id: water, quantity: 1 }];
+    expect((await waiter1('POST', '/orders', { order_type: 'DINE_IN', table_id: table, customer_name: 'Ana', items: water1 })).status).toBe(400);
+    expect((await waiter1('POST', '/orders', { order_type: 'PICKUP', customer_name: ' ', items: water1 })).status).toBe(400);
+    const pickup = await waiter1('POST', '/orders', { order_type: 'PICKUP', customer_name: '  Andrés ', items: water1 });
+    expect(pickup.body).toMatchObject({ customer_name: 'Andrés' });
+    expect((await waiter1('POST', `/orders/${pickup.body.id}/cancel`, { reason: 'NOT_WANTED' })).status).toBe(201);
+
+    // A reservation time dies when the table is taken (DB check: reserved_for only while RESERVED).
+    const other = (await db.dining_tables.create({ data: { organization_id: orgA.id, location_id: orgA.locations[0], name: 'Mesa #9', number: 9, status: 'RESERVED', reserved_for: new Date() } })).id;
+    const seated = await waiter1('POST', '/orders', { order_type: 'DINE_IN', table_id: other, items: [{ product_id: water, quantity: 1 }] });
+    expect(seated.status).toBe(201);
+    await expect(db.dining_tables.findUnique({ where: { id: other } })).resolves.toMatchObject({ status: 'OCCUPIED', reserved_for: null });
+  });
+
   it('adds rounds to the open account', async () => {
     const res = await waiter1('POST', `/orders/${orderId}/items`, { items: [{ product_id: water, quantity: 2 }] });
     expect(res.status).toBe(201);
