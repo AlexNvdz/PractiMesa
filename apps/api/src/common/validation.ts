@@ -31,6 +31,9 @@ export const oneOf =
   (...values: string[]): Check =>
   (v) =>
     typeof v === 'string' && values.includes(v);
+/** ISO 8601 date-time with an explicit offset or Z ("2026-11-27T19:30:00-05:00"). */
+export const isoDateTime: Check = (v) =>
+  typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(v) && !Number.isNaN(Date.parse(v));
 export const nullable =
   (check: Check): Check =>
   (v) =>

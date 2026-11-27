@@ -180,6 +180,12 @@ describe('floors and dining tables', () => {
   it('lets floor staff change the status, only owner/admin edit tables and floors', async () => {
     const res = await waiterA1('PUT', `/tables/${tableId}/status`, { status: 'RESERVED' });
     expect(res.body).toMatchObject({ status: 'RESERVED' });
+    const when = '2026-11-27T19:30:00-05:00';
+    const timed = await waiterA1('PUT', `/tables/${tableId}/status`, { status: 'RESERVED', reserved_for: when });
+    expect(new Date(timed.body.reserved_for).getTime()).toBe(Date.parse(when));
+    expect((await waiterA1('PUT', `/tables/${tableId}/status`, { status: 'RESERVED', reserved_for: 'mañana' })).status).toBe(400);
+    expect((await waiterA1('PUT', `/tables/${tableId}/status`, { status: 'FREE', reserved_for: when })).body).toMatchObject({ status: 'FREE', reserved_for: null });
+    expect((await waiterA1('PUT', `/tables/${tableId}/status`, { status: 'RESERVED' })).body).toMatchObject({ reserved_for: null });
     expect((await waiterA1('PUT', `/tables/${tableId}/status`, { status: 'DIRTY' })).status).toBe(400);
     expect((await waiterA1('POST', '/tables', {})).status).toBe(403);
     expect((await waiterA1('POST', '/floors', { name: 'x' })).status).toBe(403);

@@ -13,6 +13,8 @@ export interface DiningTable {
   number: number;
   capacity: number;
   status: TableStatus;
+  /** ISO time the table is reserved for (only while RESERVED, and optional). */
+  reserved_for: string | null;
   floor_id: string | null;
 }
 
@@ -120,6 +122,8 @@ export interface Order {
   order_number: number;
   table_id: string | null;
   order_type: "DINE_IN" | "PICKUP";
+  /** Who the counter (PICKUP) order is for; optional. */
+  customer_name: string | null;
   status: string;
   payment_status: "UNPAID" | "PENDING_QR" | "PAID";
   payment_method: string | null;
@@ -145,7 +149,7 @@ export interface KitchenRound {
   round: number;
   status: Exclude<RoundStatus, "DELIVERED">;
   created_at: string;
-  orders: { order_number: number; order_type: Order["order_type"]; dining_tables: { name: string } | null };
+  orders: { order_number: number; order_type: Order["order_type"]; customer_name: string | null; dining_tables: { name: string } | null };
   order_items: Pick<OrderItem, "id" | "quantity" | "selected_modifiers" | "notes" | "products" | "voided_at">[];
 }
 
@@ -181,3 +185,7 @@ export const hasReady = (o: Order) => o.order_rounds.some((r) => r.status === "R
 
 /** Tables and counter orders with food ready; a table with two orders ready counts once. */
 export const readyCount = (orders: Order[]) => new Set(orders.filter(hasReady).map((o) => o.table_id ?? o.id)).size;
+
+/** "#44 · Andrés" for a counter order with a name, "#44" without. */
+export const pickupLabel = (o: { order_number: number; customer_name: string | null }) =>
+  o.customer_name ? `#${o.order_number} · ${o.customer_name}` : `#${o.order_number}`;

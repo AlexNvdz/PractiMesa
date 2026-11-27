@@ -66,6 +66,7 @@ model dining_tables {
   organization_id String         @default(dbgenerated("app_org_id()")) @db.Uuid
   floor_id        String?        @db.Uuid
   number          Int
+  reserved_for    DateTime?      @db.Timestamptz(6)
   floors          floors?        @relation(fields: [floor_id, location_id, organization_id], references: [id, location_id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "dining_tables_floor_fkey")
   locations       locations      @relation(fields: [location_id, organization_id], references: [id, organization_id], onDelete: Cascade, onUpdate: NoAction, map: "dining_tables_location_fkey")
   orders          orders[]
@@ -199,6 +200,7 @@ model orders {
   cancelled_by          String?         @db.Uuid
   cancel_reason         String?         @db.VarChar(20)
   cancel_note           String?         @db.VarChar(120)
+  customer_name         String?         @db.VarChar(60)
   order_items           order_items[]
   order_rounds          order_rounds[]
   canceller             users?          @relation("orders_cancelled_by_organization_idTousers", fields: [cancelled_by, organization_id], references: [id, organization_id], onDelete: NoAction, onUpdate: NoAction, map: "orders_cancelled_by_fkey")

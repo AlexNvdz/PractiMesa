@@ -25,7 +25,7 @@ export const IN_SERVICE = {
 /** A table is occupied while any order on it is in service; paying before the food arrives keeps it taken. */
 export async function syncTable(tx: Prisma.TransactionClient, tableId: string) {
   const busy = await tx.orders.count({ where: { table_id: tableId, ...IN_SERVICE } });
-  await tx.dining_tables.update({ where: { id: tableId }, data: { status: busy ? 'OCCUPIED' : 'FREE' } });
+  await tx.dining_tables.update({ where: { id: tableId }, data: { status: busy ? 'OCCUPIED' : 'FREE', reserved_for: null } });
 }
 
 export interface LockedOrder {

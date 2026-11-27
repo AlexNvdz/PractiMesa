@@ -4,11 +4,11 @@ import { ArrowLeft, Clock, ConciergeBell, LayoutGrid, type LucideIcon, Pencil, P
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Dialog } from "@/components/dialog";
-import { button } from "@/components/ui";
+import { button, field } from "@/components/ui";
 import { type Undo, UndoToast } from "@/components/undo-toast";
 import { errorMessage, useApi } from "@/lib/api";
 import type { Me } from "@/lib/auth";
-import { cop, elapsed } from "@/lib/format";
+import { cop, elapsed, time } from "@/lib/format";
 import { useLive } from "@/lib/live";
 import {
   type Category,
@@ -24,6 +24,7 @@ import {
   type Product,
   toServe,
   hasReady,
+  pickupLabel,
   readyCount,
 } from "@/lib/pos";
 import { AccountPanel } from "./account-panel";
@@ -89,6 +90,8 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [voiding, setVoiding] = useState<Voiding | null>(null);
   const [busy, setBusy] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [reserveAt, setReserveAt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
 
@@ -206,8 +209,9 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
       }));
       const saved = account
         ? await api<Order>(`/orders/${account.id}/items`, "POST", { items })
-        : await api<Order>("/orders", "POST", table ? { order_type: "DINE_IN", table_id: table.id, items } : { order_type: "PICKUP", items });
+        : await api<Order>("/orders", "POST", table ? { order_type: "DINE_IN", table_id: table.id, items } : { order_type: "PICKUP", items, ...(customerName.trim() ? { customer_name: customerName.trim() } : {}) });
       put(saved);
+      setCustomerName("");
       setDraft([]);
       setComposing(false);
       setMobilePanel(true);
@@ -264,9 +268,13 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
       });
     });
 
+  // Bogotá has no daylight saving, so "today at HH:MM" is a fixed -05:00 offset.
+  const reservedFor = () =>
+    reserveAt ? `${new Date().toLocaleDateString("en-CA", { timeZone: "America/Bogota" })}T${reserveAt}:00-05:00` : undefined;
   const setTableStatus = (status: "FREE" | "RESERVED") =>
     run(async () => {
-      const saved = await api<DiningTable>(`/tables/${table!.id}/status`, "PUT", { status });
+      const saved = await api<DiningTable>(`/tables/${table!.id}/status`, "PUT", { status, reserved_for: status === "RESERVED" ? reservedFor() : undefined });
+      setReserveAt("");
       setTables((all) => all?.map((t) => (t.id === saved.id ? saved : t)) ?? null);
     });
 
@@ -278,7 +286,7 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
     );
   }
 
-  const title = table?.name ?? (here[0] ? `Para llevar #${here[0].order_number}` : "Para llevar");
+  const title = table?.name ?? (here[0] ? `Para llevar ${pickupLabel(here[0])}` : "Para llevar");
   const subtitle = account
     ? `Pedido #${account.order_number} · abierta hace ${elapsed(account.created_at, now)}`
     : served.length && !table
@@ -383,14 +391,33 @@ export function Service({ me, onReady }: { me: Me; onReady?: (count: number) => 
               now={now}
               extra={
                 table && !here.length && canOrder ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setTableStatus(table.status === "RESERVED" ? "FREE" : "RESERVED")}
-                    className={button.ghost}
-                  >
-                    {table.status === "RESERVED" ? "Quitar reserva" : "Marcar reservada"}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {table.status !== "RESERVED" && (
+                      <label className="flex items-center gap-2 text-sm text-muted">
+                        Hora
+                        <input type="time" value={reserveAt} onChange={(e) => setReserveAt(e.target.value)} className={`${field} h-10 w-[7.5rem]`} />
+                      </label>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setTableStatus(table.status === "RESERVED" ? "FREE" : "RESERVED")}
+                      className={button.ghost}
+                    >
+                      {table.status === "RESERVED" ? "Quitar reserva" : "Marcar reservada"}
+                    </button>
+                  </div>
+                ) : !table && !here.length && canOrder ? (
+                  <label className="flex w-full items-center gap-2 text-sm text-muted">
+                    Cliente
+                    <input
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      maxLength={60}
+                      placeholder="Nombre (opcional)"
+                      className={`${field} h-10`}
+                    />
+                  </label>
                 ) : undefined
               }
             />
@@ -649,7 +676,7 @@ function FloorMap({
                       </span>
                       <span className={`flex h-9 shrink-0 items-center gap-2 px-3.5 text-[13.5px] font-bold ${band}`}>
                         <Icon size={16} strokeWidth={2.5} aria-hidden />
-                        <span className="truncate">{label}</span>
+                        <span className="truncate">{state === "reserved" && t.reserved_for ? `Reserva ${time(t.reserved_for)}` : label}</span>
                         {order && state !== "ready" && <span className="figures ml-auto">#{order.order_number}</span>}
                       </span>
                     </button>
@@ -686,7 +713,7 @@ function FloorMap({
                       </span>
                     )}
                     <span className="grid min-w-0 gap-0.5">
-                      <b className="figures truncate font-display text-[17px] font-bold">Pedido #{o.order_number}</b>
+                      <b className="figures truncate font-display text-[17px] font-bold">{o.customer_name ? pickupLabel(o) : `Pedido #${o.order_number}`}</b>
                       <span className="figures text-[13.5px] text-muted">
                         {o.payment_status === "PENDING_QR"
                           ? "QR pendiente"
